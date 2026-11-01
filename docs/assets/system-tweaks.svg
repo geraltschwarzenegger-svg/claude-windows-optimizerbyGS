@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1114" viewBox="0 0 1600 1114" role="img" aria-labelledby="title description">
+<title id="title">Другие настройки в пакете Auto</title>
+<desc id="description">Информационная схема настроек Auto: UAC, HAGS, игровые функции, планировщик, MMCSS, QOL, службы, питание и GPU. Это не скриншот и не обещание улучшения производительности.</desc>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#081425"/><stop offset="0.55" stop-color="#111a36"/><stop offset="1" stop-color="#251b48"/></linearGradient><linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#54e7fa"/><stop offset="1" stop-color="#b6a0ff"/></linearGradient></defs>
+<rect width="1600" height="1114" rx="24" fill="url(#bg)"/><rect x="1" y="1" width="1598" height="1112" rx="23" fill="none" stroke="#7386bc" stroke-opacity="0.24"/>
+<rect x="52" y="42" width="36" height="4" rx="2" fill="url(#accent)"/>
+<text x="102" y="49" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="15" fill="#9db3d5">BY GS / TWEAKS IN THE SOURCE</text>
+<text x="1090" y="49" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="15" fill="#8d9fbe">ИНФОГРАФИКА · НЕ СКРИНШОТ</text>
+<text x="52" y="112" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="40" fill="#f1f6ff" font-weight="700">Другие настройки в пакете Auto</text>
+<text x="52" y="150" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="22" fill="#a8bfdb">Auto Registry Tweaks • выборка из исходного CMD</text>
+<rect x="52" y="186" width="728" height="246" rx="16" fill="#101e33" stroke="#79e4f2" stroke-opacity="0.38"/>
+<rect x="53" y="204" width="4" height="32" rx="2" fill="#79e4f2"/>
+<text x="77" y="227" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="25" fill="#79e4f2" font-weight="700">01 · UAC</text>
+<text x="77" y="268" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">EnableLUA = 0</text>
+<text x="77" y="297" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Контроль учётных записей отключается</text>
+<rect x="820" y="186" width="728" height="246" rx="16" fill="#101e33" stroke="#a4bbf8" stroke-opacity="0.38"/>
+<rect x="821" y="204" width="4" height="32" rx="2" fill="#a4bbf8"/>
+<text x="845" y="227" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="25" fill="#a4bbf8" font-weight="700">02 · HAGS и игровые функции</text>
+<text x="845" y="268" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">HAGS: HwSchMode = 2</text>
+<text x="845" y="297" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">Game Bar: GameDVR_Enabled = 0</text>
+<text x="845" y="326" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">Game Mode: AutoGameModeEnabled = 0</text>
+<rect x="52" y="456" width="728" height="246" rx="16" fill="#101e33" stroke="#a6a1ff" stroke-opacity="0.38"/>
+<rect x="53" y="474" width="4" height="32" rx="2" fill="#a6a1ff"/>
+<text x="77" y="497" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="25" fill="#a6a1ff" font-weight="700">03 · Планировщик</text>
+<text x="77" y="538" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">Win32PrioritySeparation = 0x18</text>
+<text x="77" y="567" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">SerializeTimerExpiration = 1</text>
+<rect x="820" y="456" width="728" height="246" rx="16" fill="#101e33" stroke="#82d7f6" stroke-opacity="0.38"/>
+<rect x="821" y="474" width="4" height="32" rx="2" fill="#82d7f6"/>
+<text x="845" y="497" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="25" fill="#82d7f6" font-weight="700">04 · MMCSS Auto</text>
+<text x="845" y="538" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">NDIS → Start = 2 + Optimize</text>
+<text x="845" y="567" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">NetAdapterCx → Start = 4</text>
+<text x="845" y="596" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Оба стека → выбор пользователя</text>
+<text x="845" y="625" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="21" fill="#e5edf9">Optimize: NetworkThrottlingIndex = 10</text>
+<rect x="52" y="726" width="728" height="246" rx="16" fill="#101e33" stroke="#b9a4f4" stroke-opacity="0.38"/>
+<rect x="53" y="744" width="4" height="32" rx="2" fill="#b9a4f4"/>
+<text x="77" y="767" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="25" fill="#b9a4f4" font-weight="700">05 · QOL</text>
+<text x="77" y="808" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Несколько профилей и шаблон Default</text>
+<text x="77" y="837" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">OneDrive отключается без удаления</text>
+<text x="77" y="866" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">История Explorer очищается</text>
+<text x="77" y="895" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Закрепления панели задач сбрасываются</text>
+<rect x="820" y="726" width="728" height="246" rx="16" fill="#101e33" stroke="#8ec8e7" stroke-opacity="0.38"/>
+<rect x="821" y="744" width="4" height="32" rx="2" fill="#8ec8e7"/>
+<text x="845" y="767" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="25" fill="#8ec8e7" font-weight="700">06 · Другие шаги</text>
+<text x="845" y="808" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Службы и энергосбережение</text>
+<text x="845" y="837" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Режим дисплея: приоритет частоты (Hz)</text>
+<text x="845" y="866" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">Импорт и активация схемы питания</text>
+<text x="845" y="895" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="21" fill="#9fb8d2">GPU по определённому производителю</text>
+<path d="M52 1013h1496" stroke="url(#accent)" stroke-opacity="0.4"/>
+<text x="52" y="1046" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="20" fill="#aabed8">Пакет запускается после ввода AUTO. Отдельные пункты меню дают другой выбор.</text>
+<text x="52" y="1073" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="20" fill="#aabed8">Полного автоматического отката нет.</text>
+</svg>
