@@ -1,0 +1,96 @@
+﻿{
+    "ReservedCpuSets":  null,
+    "Timestamp":  "2026-09-06 17:24:29",
+    "Devices":  [
+                    {
+                        "DisplayName":  "Chipset USB Controller (Max USB 3.2 Gen 1x1 (5 Gbps); Roles - Speakers/Microphone/Keyboard 8K/Mouse 8K)",
+                        "Category":  "USB",
+                        "Role":  "Speakers/Microphone/Keyboard/Mouse",
+                        "PNPID":  "PCI_VEN_8086_DEV_43ED",
+                        "RegistryPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_8086&DEV_43ED&SUBSYS_72708086&REV_11\3&11583659&0&A0",
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  1,
+                        "MessageLimit":  null,
+                        "IRQ priority":  null,
+                        "IRQ device policy":  null
+                    },
+                    {
+                        "DisplayName":  "GPU - ASUSTeK Computer GeForce RTX 4060",
+                        "Category":  "PCI",
+                        "Role":  "GPU",
+                        "PNPID":  "PCI_VEN_10DE_DEV_2882",
+                        "RegistryPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_10DE&DEV_2882&SUBSYS_895E1043&REV_A1\4&187b46fd&0&0008",
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  1,
+                        "MessageLimit":  1,
+                        "IRQ priority":  null,
+                        "IRQ device policy":  null
+                    },
+                    {
+                        "DisplayName":  "Audio controller (GPU) - NVIDIA AD107 High Definition Audio Controller",
+                        "Category":  "PCI",
+                        "Role":  "AudioGPU",
+                        "PNPID":  "PCI_VEN_10DE_DEV_22BE",
+                        "RegistryPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_10DE&DEV_22BE&SUBSYS_895E1043&REV_A1\4&187b46fd&0&0108",
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  0,
+                        "MessageLimit":  null,
+                        "IRQ priority":  null,
+                        "IRQ device policy":  null
+                    },
+                    {
+                        "DisplayName":  "Storage [USB] - BR28 UDISK USB Device",
+                        "Category":  "PCI",
+                        "Role":  "Storage",
+                        "PNPID":  "PCI_VEN_8086_DEV_43ED",
+                        "StorageType":  "Storage",
+                        "RegistryPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_8086&DEV_43ED&SUBSYS_72708086&REV_11\3&11583659&0&A0",
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  1,
+                        "MessageLimit":  null,
+                        "IRQ priority":  null,
+                        "IRQ device policy":  null
+                    },
+                    {
+                        "DisplayName":  "SSD [SATA] - MSI S270 480GB",
+                        "Category":  "PCI",
+                        "Role":  "Storage",
+                        "PNPID":  "PCI_VEN_8086_DEV_43D2",
+                        "StorageType":  "SSD",
+                        "RegistryPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_8086&DEV_43D2&SUBSYS_72708086&REV_11\3&11583659&0&B8",
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  1,
+                        "MessageLimit":  8,
+                        "IRQ priority":  3,
+                        "IRQ device policy":  5
+                    },
+                    {
+                        "DisplayName":  "SSD [NVMe] - ADATA LEGEND 800",
+                        "Category":  "PCI",
+                        "Role":  "Storage",
+                        "PNPID":  "PCI_VEN_1CC1_DEV_627A",
+                        "StorageType":  "SSD",
+                        "RegistryPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_1CC1&DEV_627A&SUBSYS_627A1CC1&REV_03\4&15ED80A4&0&00E0",
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  1,
+                        "MessageLimit":  2048,
+                        "IRQ priority":  3,
+                        "IRQ device policy":  5
+                    },
+                    {
+                        "DisplayName":  "Network Interface Card (NetAdapterCx WiredEthernet) - Realtek Semiconductor RTL8111 PCIe GbE Family Controller",
+                        "Category":  "Network",
+                        "Role":  "NetAdapterCx",
+                        "PNPID":  "PCI_VEN_10EC_DEV_8168",
+                        "ClassPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\0001",
+                        "ConfigPath":  "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_10EC&DEV_8168&SUBSYS_012310EC&REV_15\4&1808C844&0&00E8",
+                        "NumRssQueues":  null,
+                        "RssBaseProcNumber":  null,
+                        "IRQ affinity mask":  null,
+                        "MSIEnabled":  1,
+                        "MessageLimit":  1,
+                        "IRQ priority":  null,
+                        "IRQ device policy":  null
+                    }
+                ]
+}
