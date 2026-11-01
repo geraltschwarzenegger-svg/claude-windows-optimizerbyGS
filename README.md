@@ -11,7 +11,7 @@
 ![CMD + PowerShell](https://img.shields.io/badge/CMD_%2B_PowerShell-один_файл-8B5CF6?style=for-the-badge)
 ![Experimental](https://img.shields.io/badge/Статус-экспериментальный-F59E0B?style=for-the-badge)
 
-**v2.0.0-preview.1 · обновлённое меню, встроенные ресурсы и новая документация**
+**v2.0.0-preview.2 · обновлённое меню, встроенные ресурсы и новая документация**
 
 [📥 Открыть CMD v2](Low-Latency-Corp-Menu_v2.cmd) · [📝 История изменений](CHANGELOG.md) · [🔬 Сравнить версии](docs/COMPARISON.md)
 
@@ -265,7 +265,7 @@ pwsh -NoProfile -File ./tests/Test-V2.ps1
 | :---: | :---: | :---: |
 | **49 проверок** | **2 проверки CMD в Windows** | Linux · PowerShell 7.4.13 |
 
-**Граница проверки:** новая логика проверена в Linux с PowerShell 7.4.13; интерактивное меню, batch-launcher, реестр, службы, драйверы и применение настроек требуют отдельного испытания в Windows. Полноценное тестирование на Windows здесь не выполнялось.
+**Граница проверки:** новая логика проверена локально в Linux с PowerShell 7.4.13 и в GitHub Actions с Windows PowerShell 5.1, включая CMD `/help` и `/check`. Интерактивное меню, реестр, службы, драйверы и применение настроек требуют отдельного испытания на целевой Windows. Прохождение CI не подтверждает пользу твиков или их совместимость с вашим ПК.
 
 ## 🩺 Если что-то пошло не так
 

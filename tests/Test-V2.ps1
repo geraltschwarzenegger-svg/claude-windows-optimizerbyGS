@@ -288,3 +288,6 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
 }
 
 Write-Host ('Completed: {0} passed, {1} skipped. Windows tweaks and hardware behavior were not exercised.' -f $script:Passed, $script:Skipped) -ForegroundColor Cyan
+# /check deliberately returns 2 on Linux. Do not leak that expected child exit
+# into the GitHub Actions PowerShell wrapper after all assertions have passed.
+exit 0
