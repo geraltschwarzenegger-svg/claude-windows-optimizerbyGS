@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title description">
+  <title id="title">Low Latency — Windows Toolkit by GS</title>
+  <desc id="description">Dark navy banner with cyan and violet accents, a console illustration and four window tiles. CMD and PowerShell.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081425"/>
+      <stop offset="0.55" stop-color="#111a36"/>
+      <stop offset="1" stop-color="#251b48"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#54e7fa"/>
+      <stop offset="1" stop-color="#b6a0ff"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#33ddf0"/>
+      <stop offset="1" stop-color="#6a80f9"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#5669ec" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#5669ec" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#90abdf" stroke-opacity="0.055"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="360" rx="22" fill="url(#bg)"/>
+  <rect width="1280" height="360" rx="22" fill="url(#grid)"/>
+  <ellipse cx="1010" cy="170" rx="340" ry="260" fill="url(#glow)"/>
+  <rect x="1" y="1" width="1278" height="358" rx="21" fill="none" stroke="#7386bc" stroke-opacity="0.24"/>
+  <rect x="52" y="48" width="36" height="4" rx="2" fill="url(#accent)"/>
+  <text x="101" y="56" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" letter-spacing="3" fill="#99b2d6">SYSTEM CONTROL · BY GS</text>
+  <text x="49" y="144" font-family="Segoe UI,Arial,sans-serif" font-size="66" font-weight="800" letter-spacing="-2" fill="#f1f6ff">LOW LATENCY</text>
+  <text x="52" y="199" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="600" letter-spacing="2" fill="url(#accent)">WINDOWS TOOLKIT</text>
+  <text x="53" y="239" font-family="Segoe UI,Arial,sans-serif" font-size="17" fill="#a8b8d6">Registry · Graphics · Services · Desktop</text>
+  <rect x="53" y="274" width="195" height="34" rx="17" fill="#162b45" stroke="#345674"/>
+  <text x="74" y="296" font-family="Consolas,monospace" font-size="14" font-weight="600" fill="#8de8f5">CMD + PowerShell</text>
+  <text x="266" y="296" font-family="Segoe UI,Arial,sans-serif" font-size="13" letter-spacing="1" fill="#7f93b8">ONE FILE. YOUR SETTINGS.</text>
+  <g transform="translate(800 57)">
+    <rect x="0" y="10" width="411" height="247" rx="15" fill="#050b18" fill-opacity="0.5"/>
+    <rect width="411" height="247" rx="15" fill="#0c172a" stroke="#536a9a" stroke-opacity="0.65"/>
+    <path d="M15 0h381a15 15 0 0 1 15 15v25H0V15A15 15 0 0 1 15 0" fill="#19253e"/>
+    <circle cx="23" cy="20" r="4" fill="#7482a5"/>
+    <circle cx="40" cy="20" r="4" fill="#7482a5"/>
+    <circle cx="57" cy="20" r="4" fill="#7482a5"/>
+    <text x="213" y="25" font-family="Consolas,monospace" font-size="12" text-anchor="middle" fill="#92a6cb">GS / CONTROL CONSOLE</text>
+    <path d="M31 76l10 8-10 8" fill="none" stroke="#5de3f5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="54" y="80" width="127" height="8" rx="4" fill="#798fc0"/>
+    <rect x="31" y="114" width="148" height="6" rx="3" fill="#34496e"/>
+    <rect x="31" y="133" width="112" height="6" rx="3" fill="#34496e"/>
+    <rect x="31" y="152" width="136" height="6" rx="3" fill="#34496e"/>
+    <rect x="31" y="185" width="150" height="29" rx="7" fill="#16394a"/>
+    <text x="44" y="204" font-family="Consolas,monospace" font-size="12" fill="#75dbec">SELECT A MODULE</text>
+    <g transform="translate(230 77)">
+      <rect width="61" height="61" rx="8" fill="url(#tile)"/>
+      <rect x="69" width="61" height="61" rx="8" fill="url(#tile)" opacity="0.8"/>
+      <rect y="69" width="61" height="61" rx="8" fill="url(#tile)" opacity="0.7"/>
+      <rect x="69" y="69" width="61" height="61" rx="8" fill="url(#tile)" opacity="0.55"/>
+    </g>
+  </g>
+  <path d="M800 326h411" stroke="url(#accent)" stroke-opacity="0.3"/>
+  <circle cx="800" cy="326" r="3" fill="#54e7fa"/>
+</svg>

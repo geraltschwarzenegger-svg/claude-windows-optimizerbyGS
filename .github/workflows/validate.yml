@@ -1,0 +1,29 @@
+name: Validate PowerShell payloads
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: pwsh
+            label: Linux / PowerShell 7
+          - os: windows-latest
+            shell: powershell
+            label: Windows / Windows PowerShell 5.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated tests without applying Windows tweaks
+        shell: ${{ matrix.shell }}
+        run: ./tests/Test-V2.ps1

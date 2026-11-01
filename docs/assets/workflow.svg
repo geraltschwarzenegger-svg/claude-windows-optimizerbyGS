@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="436" viewBox="0 0 1280 436" role="img" aria-labelledby="title description">
+  <title id="title">Как начать: проверить, изучить, выбрать, применить</title>
+  <desc id="description">Четыре этапа: запустить /check без применения настроек; проверить ресурсы и подготовить резервную копию; выбрать отдельную настройку; применить её из консоли администратора. Это схема процесса, а не скриншот приложения.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#081425"/>
+      <stop offset="0.58" stop-color="#111a36"/>
+      <stop offset="1" stop-color="#251b48"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#54e7fa"/>
+      <stop offset="1" stop-color="#b6a0ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="436" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1278" height="434" rx="21" fill="none" stroke="#7386bc" stroke-opacity="0.24"/>
+  <rect x="48" y="42" width="34" height="4" rx="2" fill="url(#accent)"/>
+  <text x="95" y="49" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="14" letter-spacing="2" fill="#99b2d6">BY GS / GETTING STARTED</text>
+  <text x="1232" y="49" text-anchor="end" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="14" fill="#8c9cbb">СХЕМА ПРОЦЕССА</text>
+  <text x="48" y="105" font-family="Segoe UI,DejaVu Sans,Arial,sans-serif" font-size="37" font-weight="700" fill="#f1f6ff">От проверки — к выбранной настройке</text>
+  <g font-family="Segoe UI,DejaVu Sans,Arial,sans-serif">
+    <rect x="48" y="142" width="278" height="215" rx="15" fill="#102638" stroke="#3b8a9e"/>
+    <rect x="350" y="142" width="278" height="215" rx="15" fill="#16243d" stroke="#4c709d"/>
+    <rect x="652" y="142" width="278" height="215" rx="15" fill="#1b2340" stroke="#6868aa"/>
+    <rect x="954" y="142" width="278" height="215" rx="15" fill="#28213f" stroke="#8b70b4"/>
+    <text x="72" y="179" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="16" fill="#6cc7d8">01 / CHECK</text>
+    <text x="374" y="179" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="16" fill="#84b3df">02 / REVIEW</text>
+    <text x="676" y="179" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="16" fill="#a5a3f4">03 / CHOOSE</text>
+    <text x="978" y="179" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="16" fill="#c8a0ee">04 / APPLY</text>
+    <text x="72" y="232" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="34" font-weight="700" fill="#8de8f5">/check</text>
+    <text x="374" y="232" font-size="29" font-weight="700" fill="#a9cff4">Изучить</text>
+    <text x="676" y="232" font-size="29" font-weight="700" fill="#b9b6ff">Выбрать</text>
+    <text x="978" y="232" font-size="29" font-weight="700" fill="#d5b8f5">Применить</text>
+    <text x="72" y="276" font-size="19" fill="#c1d6e7">Синтаксис и хост</text>
+    <text x="72" y="306" font-size="19" fill="#c1d6e7">Без применения твиков</text>
+    <text x="374" y="276" font-size="19" fill="#c1d6e7">Ресурсы и ограничения</text>
+    <text x="374" y="306" font-size="19" fill="#c1d6e7">Подготовить бэкап</text>
+    <text x="676" y="276" font-size="19" fill="#c1d6e7">Отдельную настройку</text>
+    <text x="676" y="306" font-size="19" fill="#c1d6e7">Под свою задачу</text>
+    <text x="978" y="276" font-size="19" fill="#c1d6e7">Из консоли</text>
+    <text x="978" y="306" font-size="19" fill="#c1d6e7">администратора</text>
+    <path d="M332 249h12m-5-5 5 5-5 5M634 249h12m-5-5 5 5-5 5M936 249h12m-5-5 5 5-5 5" fill="none" stroke="#8c9ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="48" y="400" font-size="18" fill="#a8b8d6">Бэкап готовится отдельно. Auto / QOL — с подтверждением. Полного автоматического отката нет.</text>
+  </g>
+</svg>

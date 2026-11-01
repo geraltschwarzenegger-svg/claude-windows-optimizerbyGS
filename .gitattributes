@@ -1,0 +1,3 @@
+# Keep the original CMD byte-for-byte and preserve the v2 Windows CRLF payload.
+Low-Latency-Corp-Menu_SPI_24H2_VisualizationFix.cmd -text
+Low-Latency-Corp-Menu_v2.cmd -text whitespace=cr-at-eol
