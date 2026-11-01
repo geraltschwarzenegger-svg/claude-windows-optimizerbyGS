@@ -262,6 +262,29 @@ Test-Case 'demo snapshot child runs without admin or transcript and matches the 
         Remove-Item -LiteralPath $tmpDir -Recurse -Force
     }
 }
+Test-Case 'interactive demo with redirected output fails clearly without initializing backend' {
+    $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('llc-ui-no-tty-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path $tmpDir
+    $scriptPath = Join-Path $tmpDir 'payload.ps1'
+    $logPath = Join-Path $tmpDir 'must-not-exist.log'
+    $oldDemo = $env:LLC_MENU_DEMO; $oldSnapshot = $env:LLC_MENU_SNAPSHOT; $oldLog = $env:LLC_MENU_DEBUG_LOG
+    try {
+        [IO.File]::WriteAllText($scriptPath, $payload, (New-Object Text.UTF8Encoding($true)))
+        $env:LLC_MENU_DEMO='1'; $env:LLC_MENU_SNAPSHOT=$null; $env:LLC_MENU_DEBUG_LOG=$logPath
+        $engine = (Get-Process -Id $PID).Path
+        # Capturing output deliberately removes the interactive output terminal.
+        $output = @(& $engine -NoLogo -NoProfile -File $scriptPath 2>&1)
+        $actualExit = $LASTEXITCODE
+        $text = $output -join "`n"
+        Assert-True ($actualExit -eq 2) ('Redirected interactive demo must return 2, got ' + $actualExit + ': ' + $text)
+        Assert-True ($text -match 'interactive terminal is required') 'Missing actionable terminal diagnostic.'
+        Assert-True (-not $text.Contains('UI preview closed.')) 'Failed preview falsely reported successful closure.'
+        Assert-True (-not (Test-Path -LiteralPath $logPath)) 'Failed preview started backend transcript.'
+    } finally {
+        $env:LLC_MENU_DEMO=$oldDemo; $env:LLC_MENU_SNAPSHOT=$oldSnapshot; $env:LLC_MENU_DEBUG_LOG=$oldLog
+        Remove-Item -LiteralPath $tmpDir -Recurse -Force
+    }
+}
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     Test-Case 'CMD /demo /snapshot launches the isolated UI on Windows' {
         $output = @(& $env:ComSpec /d /c ('""{0}" /demo /snapshot"' -f $cmdPath) 2>&1)

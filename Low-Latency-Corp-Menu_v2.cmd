@@ -474,7 +474,12 @@ if ($env:LLC_MENU_DEMO -eq '1') {
         $demoFrame = Get-LlcMenuFrame -Title 'UI PREVIEW - no system changes' -Items $demoItems -SelectedIndex 0 -Width 80 -Height 30
         [Console]::WriteLine(($demoFrame.Lines -join [Environment]::NewLine))
     } else {
-        $demoChoice = Invoke-Menu -Title 'UI PREVIEW - no system changes' -Items $demoItems
+        try {
+            $demoChoice = Invoke-Menu -Title 'UI PREVIEW - no system changes' -Items $demoItems
+        } catch {
+            [Console]::WriteLine('UI preview unavailable: ' + $_.Exception.Message)
+            exit 2
+        }
         [Console]::WriteLine('UI preview closed. No settings were applied.')
     }
     exit 0
