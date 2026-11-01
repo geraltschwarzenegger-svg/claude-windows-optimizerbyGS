@@ -9,21 +9,19 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: ${{ matrix.label }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            shell: pwsh
-            label: Linux / PowerShell 7
-          - os: windows-latest
-            shell: powershell
-            label: Windows / Windows PowerShell 5.1
+  linux:
+    name: Linux / PowerShell 7
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Run isolated tests without applying Windows tweaks
-        shell: ${{ matrix.shell }}
+        shell: pwsh
+        run: ./tests/Test-V2.ps1
+  windows:
+    name: Windows / Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated tests without applying Windows tweaks
+        shell: powershell
         run: ./tests/Test-V2.ps1
