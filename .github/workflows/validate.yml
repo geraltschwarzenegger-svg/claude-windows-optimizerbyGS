@@ -25,6 +25,17 @@ jobs:
             @('### Test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             throw
           }
+      - name: Check menu layout, navigation and isolated demo
+        shell: pwsh
+        run: |
+          try {
+            ./tests/Test-Menu.ps1
+          } catch {
+            $message = $_.Exception.Message -replace '[\r\n]+', ' '
+            Write-Host "::error title=Menu test failure::$message"
+            @('### Menu test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            throw
+          }
   windows:
     name: Windows / Windows PowerShell 5.1
     runs-on: windows-latest
@@ -39,5 +50,16 @@ jobs:
             $message = $_.Exception.Message -replace '[\r\n]+', ' '
             Write-Host "::error title=Isolated test failure::$message"
             @('### Test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            throw
+          }
+      - name: Check menu layout, navigation and isolated demo
+        shell: powershell
+        run: |
+          try {
+            ./tests/Test-Menu.ps1
+          } catch {
+            $message = $_.Exception.Message -replace '[\r\n]+', ' '
+            Write-Host "::error title=Menu test failure::$message"
+            @('### Menu test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             throw
           }

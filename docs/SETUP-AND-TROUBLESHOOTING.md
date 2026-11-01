@@ -66,19 +66,21 @@ claude-windows-optimizerbyGS/
 
 ```powershell
 powershell.exe -NoProfile -File .\tests\Test-V2.ps1
+powershell.exe -NoProfile -File .\tests\Test-Menu.ps1
 ```
 
 Для статических проверок в Linux можно использовать PowerShell 7:
 
 ```sh
 pwsh -NoProfile -File ./tests/Test-V2.ps1
+pwsh -NoProfile -File ./tests/Test-Menu.ps1
 ```
 
 Проверяется разбор обоих CMD-payload, подтверждения и отмена, границы размера загрузки, поиск включённых ресурсов и ранний выход режима проверки. Тесты не применяют твики Windows. Добавлен workflow GitHub Actions для Linux и Windows PowerShell 5.1; результат Windows CI следует смотреть в разделе Actions.
 
 | 🟢 Пройдено | 🟡 Пропущено | 🖥️ Среда проверки |
 | :---: | :---: | :---: |
-| **49 проверок** | **2 проверки CMD в Windows** | Linux · PowerShell 7.4.13 |
+| **67 проверок** | **3 проверки CMD в Windows** | Linux · PowerShell 7.4.13 |
 
 **Граница проверки:** новая логика проверена локально в Linux с PowerShell 7.4.13 и в GitHub Actions с Windows PowerShell 5.1, включая CMD `/help` и `/check`. Интерактивное меню, реестр, службы, драйверы и применение настроек требуют отдельного испытания на целевой Windows. Прохождение CI не подтверждает пользу твиков или их совместимость с вашим ПК.
 

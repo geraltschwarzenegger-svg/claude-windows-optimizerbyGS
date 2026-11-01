@@ -2,6 +2,9 @@
 setlocal EnableExtensions
 title Low Latency Corp Menu v2
 set "LLC_RUN_CHECK="
+set "LLC_MENU_DEMO="
+set "LLC_MENU_SNAPSHOT="
+if /i "%~1"=="/demo" goto llcDemoArgs
 if not "%~2"=="" goto llcUsage
 if "%~1"=="" goto llcArgsReady
 if /i "%~1"=="/check" (
@@ -10,14 +13,24 @@ if /i "%~1"=="/check" (
 )
 if /i "%~1"=="/help" goto llcHelp
 if /i "%~1"=="/?" goto llcHelp
+goto llcUsage
+:llcDemoArgs
+if not "%~3"=="" goto llcUsage
+set "LLC_MENU_DEMO=1"
+if "%~2"=="" goto llcArgsReady
+if /i not "%~2"=="/snapshot" goto llcUsage
+set "LLC_MENU_SNAPSHOT=1"
+goto llcArgsReady
 :llcUsage
-echo Unknown arguments. Use /check or /help.
+echo Unknown arguments. Use /check, /demo, /demo /snapshot or /help.
 exit /b 2
 :llcHelp
 echo Low Latency Corp Menu v2
 echo   No arguments: open the interactive menu as Administrator.
 echo   /check      : check payload syntax and basic host prerequisites only.
 echo                 No administrator rights required. No tweaks applied.
+echo   /demo       : preview the interactive UI without applying any settings.
+echo   /demo /snapshot : print a noninteractive UI preview and exit.
 echo   /help       : show this help.
 echo /check exit codes: 0=basic checks passed, 1=payload error, 2=unsupported host.
 echo Missing Resources are reported but do not fail the basic host check.
@@ -34,13 +47,14 @@ if errorlevel 1 (
     echo This usually means the script marker is missing or the file was damaged.
     echo.
     del "%PSPAYLOAD%" >nul 2>&1
-    if not defined LLC_RUN_CHECK pause
+    if not defined LLC_RUN_CHECK if not defined LLC_MENU_DEMO pause
     exit /b 1
 )
 
 powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PSPAYLOAD%"
 set "APP_EXIT=%ERRORLEVEL%"
 if defined LLC_RUN_CHECK goto llcCleanup
+if defined LLC_MENU_DEMO goto llcCleanup
 
 if not "%APP_EXIT%"=="0" (
     echo.
@@ -144,6 +158,328 @@ function Assert-LlcDownloadLength {
         throw ('Download size mismatch: expected {0} bytes, received {1}; installer was not saved.' -f $TotalBytes, $DownloadedBytes)
     }
 }
+
+# The menu is a bounded full frame. Never grow the buffer or cache scrollback rows.
+function Format-LlcMenuText {
+    param([AllowNull()][string]$Text, [int]$Width, [switch]$Pad)
+    $widthLimit = [Math]::Max(0, $Width)
+    $clean = ([string]$Text -replace '[\x00-\x1f\x7f-\x9f]', ' ')
+    $builder = New-Object Text.StringBuilder
+    $cells = 0
+    $elements = [Globalization.StringInfo]::GetTextElementEnumerator($clean)
+    while ($elements.MoveNext()) {
+        $element = $elements.GetTextElement()
+        $point = [char]::ConvertToUtf32($element, 0)
+        $wide = (($point -ge 0x1100 -and $point -le 0x115f) -or
+            ($point -ge 0x2e80 -and $point -le 0xa4cf) -or
+            ($point -ge 0xac00 -and $point -le 0xd7a3) -or
+            ($point -ge 0xf900 -and $point -le 0xfaff) -or
+            ($point -ge 0xfe10 -and $point -le 0xfe6f) -or
+            ($point -ge 0xff01 -and $point -le 0xff60) -or
+            ($point -ge 0x1f000))
+        $size = if ($wide) { 2 } else { 1 }
+        if (($cells + $size) -gt $widthLimit) { break }
+        [void]$builder.Append($element)
+        $cells += $size
+    }
+    if ($Pad -and $cells -lt $widthLimit) { [void]$builder.Append(' ' * ($widthLimit - $cells)) }
+    return $builder.ToString()
+}
+
+function Get-LlcMenuEntries {
+    param([AllowEmptyCollection()][object[]]$Items)
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        $item = $Items[$i]
+        if ($null -eq $item) { continue }
+        $text = [string]$item
+        $selectable = $true
+        $value = $i
+        $description = ''
+        if ($item -isnot [string]) {
+            if ($item.PSObject.Properties['Text']) { $text = [string]$item.Text }
+            if ($item.PSObject.Properties['Selectable']) { $selectable = [bool]$item.Selectable }
+            elseif ($item.PSObject.Properties['Kind'] -and $item.Kind -eq 'Header') { $selectable = $false }
+            if ($item.PSObject.Properties['Value']) { $value = $item.Value }
+            if ($item.PSObject.Properties['Description']) { $description = [string]$item.Description }
+        }
+        $text = ($text -replace '[\x00-\x1f\x7f-\x9f]', ' ').Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        [pscustomobject]@{ Index=$i; Text=$text; Selectable=$selectable; Value=$value; Description=$description }
+    }
+}
+
+function Get-LlcMenuNextIndex {
+    param(
+        [AllowEmptyCollection()][object[]]$Items,
+        [int]$CurrentIndex = -1,
+        [string]$Key = 'Home',
+        [int]$PageSize = 1
+    )
+    $entries = @(Get-LlcMenuEntries -Items $Items)
+    $selectable = @($entries | Where-Object { $_.Selectable })
+    if ($selectable.Count -eq 0) { return -1 }
+    if ($Key -eq 'Home') { return [int]$selectable[0].Index }
+    if ($Key -eq 'End') { return [int]$selectable[-1].Index }
+    $position = -1
+    for ($i = 0; $i -lt $selectable.Count; $i++) {
+        if ($selectable[$i].Index -eq $CurrentIndex) { $position = $i; break }
+    }
+    if ($position -lt 0) { return [int]$selectable[0].Index }
+    switch ($Key) {
+        'UpArrow' { return [int]$selectable[(($position - 1 + $selectable.Count) % $selectable.Count)].Index }
+        'DownArrow' { return [int]$selectable[(($position + 1) % $selectable.Count)].Index }
+        'PageUp' { return [int]$selectable[[Math]::Max(0, $position - [Math]::Max(1, $PageSize))].Index }
+        'PageDown' { return [int]$selectable[[Math]::Min($selectable.Count - 1, $position + [Math]::Max(1, $PageSize))].Index }
+        default { return $CurrentIndex }
+    }
+}
+
+function Get-LlcMenuValue {
+    param([AllowEmptyCollection()][object[]]$Items, [int]$Index)
+    $entry = @(Get-LlcMenuEntries -Items $Items | Where-Object { $_.Index -eq $Index -and $_.Selectable })
+    if ($entry.Count -eq 0) { return -1 }
+    return $entry[0].Value
+}
+
+function Get-LlcMenuFrame {
+    param(
+        [string]$Title,
+        [AllowEmptyCollection()][object[]]$Items,
+        [int]$SelectedIndex,
+        [int]$TopIndex = 0,
+        [int]$Width = 80,
+        [int]$Height = 30
+    )
+    $lineWidth = [Math]::Max(0, [Math]::Min(104, $Width - 1))
+    $rowLimit = [Math]::Max(0, $Height - 1)
+    $lines = New-Object 'Collections.Generic.List[string]'
+    $styles = New-Object 'Collections.Generic.List[string]'
+    $visible = New-Object 'Collections.Generic.List[int]'
+    $entries = @(Get-LlcMenuEntries -Items $Items)
+    $selectedRow = -1
+    $tooSmall = ($Width -lt 40 -or $Height -lt 10)
+    if ($tooSmall) {
+        foreach ($text in @('Resize terminal to at least 40 x 10.', 'ESC: back')) {
+            if ($lines.Count -ge $rowLimit) { break }
+            $lines.Add((Format-LlcMenuText -Text $text -Width $lineWidth -Pad))
+            $styles.Add('hint')
+        }
+        return [pscustomobject]@{ Lines=$lines.ToArray(); Styles=$styles.ToArray(); TopIndex=0; VisibleRows=0; VisibleIndices=@(); SelectedRow=-1; IsTooSmall=$true }
+    }
+    $capacity = [Math]::Max(1, $Height - 8)
+    $rows = [Math]::Min($capacity, $entries.Count)
+    $selectedPosition = -1
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        if ($entries[$i].Index -eq $SelectedIndex -and $entries[$i].Selectable) { $selectedPosition = $i; break }
+    }
+    $top = [Math]::Max(0, [Math]::Min($TopIndex, [Math]::Max(0, $entries.Count - $rows)))
+    if ($selectedPosition -ge 0) {
+        if ($selectedPosition -lt $top) { $top = $selectedPosition }
+        if ($selectedPosition -ge ($top + $rows)) { $top = $selectedPosition - $rows + 1 }
+    }
+    $lines.Add((Format-LlcMenuText -Text ' LOW LATENCY  /  by GS                         v2  PREVIEW 3' -Width $lineWidth -Pad)); $styles.Add('brand')
+    $lines.Add((Format-LlcMenuText -Text (' ' + $Title) -Width $lineWidth -Pad)); $styles.Add('title')
+    $divider = ' ' + (([char]0x2500).ToString() * [Math]::Max(0, $lineWidth - 2))
+    $lines.Add((Format-LlcMenuText -Text $divider -Width $lineWidth -Pad)); $styles.Add('border')
+    for ($row = 0; $row -lt $rows; $row++) {
+        $entry = $entries[$top + $row]
+        $visible.Add([int]$entry.Index)
+        if (-not $entry.Selectable) {
+            $text = '  [ ' + $entry.Text.TrimEnd(':').ToUpperInvariant() + ' ]'
+            $style = 'group'
+        } elseif ($entry.Index -eq $SelectedIndex) {
+            $selectedRow = $lines.Count
+            $text = '  > ' + $entry.Text
+            $style = 'selected'
+        } else {
+            $text = '    ' + $entry.Text
+            $style = 'normal'
+        }
+        $lines.Add((Format-LlcMenuText -Text $text -Width $lineWidth -Pad)); $styles.Add($style)
+    }
+    $lines.Add((Format-LlcMenuText -Text $divider -Width $lineWidth -Pad)); $styles.Add('border')
+    $status = ' Rows {0}-{1} / {2}    PgUp/PgDn: page    Home/End' -f ($top + 1), ($top + $rows), $entries.Count
+    $lines.Add((Format-LlcMenuText -Text $status -Width $lineWidth -Pad)); $styles.Add('hint')
+    $detail = ' Select an item. Changes run only after you press ENTER.'
+    if ($selectedPosition -ge 0 -and -not [string]::IsNullOrWhiteSpace($entries[$selectedPosition].Description)) {
+        $detail = ' ' + $entries[$selectedPosition].Description
+    }
+    $lines.Add((Format-LlcMenuText -Text $detail -Width $lineWidth -Pad)); $styles.Add('detail')
+    $lines.Add((Format-LlcMenuText -Text ' UP/DOWN  move    ENTER  select    ESC  back' -Width $lineWidth -Pad)); $styles.Add('footer')
+    return [pscustomobject]@{ Lines=$lines.ToArray(); Styles=$styles.ToArray(); TopIndex=$top; VisibleRows=$rows; VisibleIndices=$visible.ToArray(); SelectedRow=$selectedRow; IsTooSmall=$false }
+}
+
+function ConvertTo-LlcMenuAnsiFrame {
+    param([Parameter(Mandatory=$true)][object]$Frame)
+    $esc = ([char]27).ToString()
+    $builder = New-Object Text.StringBuilder
+    [void]$builder.Append($esc + '[0m' + $esc + '[H' + $esc + '[2J')
+    for ($i = 0; $i -lt $Frame.Lines.Count; $i++) {
+        $colors = switch ($Frame.Styles[$i]) {
+            'brand' { '1;38;2;91;225;239;48;2;10;20;37' }
+            'title' { '1;38;2;241;246;255;48;2;10;20;37' }
+            'selected' { '1;38;2;132;237;249;48;2;27;54;78' }
+            'group' { '1;38;2;177;157;247;48;2;10;20;37' }
+            'border' { '38;2;57;83;119;48;2;10;20;37' }
+            'detail' { '38;2;160;184;210;48;2;10;20;37' }
+            default { '38;2;190;205;225;48;2;10;20;37' }
+        }
+        [void]$builder.Append($esc + '[' + $colors + 'm' + $Frame.Lines[$i] + $esc + '[0m')
+        if ($i -lt ($Frame.Lines.Count - 1)) { [void]$builder.Append("`r`n") }
+    }
+    return $builder.ToString()
+}
+
+function Enable-LlcMenuVirtualTerminal {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return [pscustomobject]@{ Enabled=$true; Changed=$false } }
+    try {
+        if (-not ('LlcMenuConsoleMode' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class LlcMenuConsoleMode {
+    [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int n);
+    [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint mode);
+    [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint mode);
+}
+'@
+        }
+        $handle = [LlcMenuConsoleMode]::GetStdHandle(-11)
+        [uint32]$mode = 0
+        if (-not [LlcMenuConsoleMode]::GetConsoleMode($handle, [ref]$mode)) { return [pscustomobject]@{ Enabled=$false; Changed=$false } }
+        if (($mode -band 4) -eq 4) { return [pscustomobject]@{ Enabled=$true; Changed=$false } }
+        $enabled = [LlcMenuConsoleMode]::SetConsoleMode($handle, ($mode -bor 4))
+        return [pscustomobject]@{ Enabled=$enabled; Changed=$enabled; Handle=$handle; OriginalMode=$mode }
+    } catch { return [pscustomobject]@{ Enabled=$false; Changed=$false } }
+}
+
+function Get-LlcMenuConsoleSize {
+    $width = 80; $height = 25
+    try { $width = [Math]::Min([Console]::WindowWidth, [Console]::BufferWidth); $height = [Console]::WindowHeight } catch { }
+    return [pscustomobject]@{ Width=$width; Height=$height }
+}
+
+function Write-LlcMenuFrame {
+    param([object]$Frame, [bool]$UseAnsi)
+    if ($UseAnsi) { [Console]::Write((ConvertTo-LlcMenuAnsiFrame -Frame $Frame)); return }
+    # Classic console fallback: bounded native writes, no PowerShell host writes or newline.
+    [Console]::Clear()
+    $origin = [Console]::WindowTop
+    for ($i = 0; $i -lt $Frame.Lines.Count; $i++) {
+        [Console]::SetCursorPosition(0, ($origin + $i))
+        [Console]::BackgroundColor = [ConsoleColor]::Black
+        [Console]::ForegroundColor = switch ($Frame.Styles[$i]) {
+            'selected' { [Console]::BackgroundColor = [ConsoleColor]::DarkBlue; [ConsoleColor]::Cyan }
+            'brand' { [ConsoleColor]::Cyan }
+            'title' { [ConsoleColor]::White }
+            'group' { [ConsoleColor]::Magenta }
+            default { [ConsoleColor]::Gray }
+        }
+        [Console]::Write($Frame.Lines[$i])
+    }
+    [Console]::ResetColor()
+}
+
+function Reset-LlcMenuInput {
+    try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch { }
+}
+
+function Invoke-Menu {
+    param([Parameter(Mandatory=$true)][string]$Title, [AllowEmptyCollection()][object[]]$Items)
+    $index = Get-LlcMenuNextIndex -Items $Items -Key Home
+    if ($index -lt 0) { return -1 }
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
+        throw 'An interactive terminal is required for the menu. Use /check or /demo /snapshot for noninteractive output.'
+    }
+    $oldForeground = [Console]::ForegroundColor
+    $oldBackground = [Console]::BackgroundColor
+    $oldEncoding = [Console]::OutputEncoding
+    $oldVisible = $true
+    try { $oldVisible = [Console]::CursorVisible } catch { }
+    $terminalState = Enable-LlcMenuVirtualTerminal
+    $useAnsi = [bool]$terminalState.Enabled
+    try {
+        try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch { }
+        if ($useAnsi) { [Console]::Write(([char]27).ToString() + '[?25l') }
+        else { try { [Console]::CursorVisible = $false } catch { } }
+        Reset-LlcMenuInput
+        $top = 0
+        $lastSignature = ''
+        $dirty = $true
+        while ($true) {
+            $size = Get-LlcMenuConsoleSize
+            $signature = '{0}x{1}' -f $size.Width, $size.Height
+            if ($dirty -or $signature -ne $lastSignature) {
+                $frame = Get-LlcMenuFrame -Title $Title -Items $Items -SelectedIndex $index -TopIndex $top -Width $size.Width -Height $size.Height
+                Write-LlcMenuFrame -Frame $frame -UseAnsi $useAnsi
+                $top = $frame.TopIndex
+                $lastSignature = $signature
+                $dirty = $false
+            }
+            if (-not [Console]::KeyAvailable) { Start-Sleep -Milliseconds 20; continue }
+            $key = [Console]::ReadKey($true).Key.ToString()
+            if ($key -eq 'Escape') { Reset-LlcMenuInput; return -1 }
+            if ($frame.IsTooSmall) { continue }
+            if ($key -eq 'Enter') { Reset-LlcMenuInput; return (Get-LlcMenuValue -Items $Items -Index $index) }
+            $next = Get-LlcMenuNextIndex -Items $Items -CurrentIndex $index -Key $key -PageSize $frame.VisibleRows
+            if ($next -ne $index) { $index = $next; $dirty = $true }
+        }
+    }
+    finally {
+        if ($useAnsi) {
+            $cursorMode = if ($oldVisible) { '[?25h' } else { '[?25l' }
+            [Console]::Write(([char]27).ToString() + '[0m' + ([char]27).ToString() + $cursorMode + ([char]27).ToString() + '[H' + ([char]27).ToString() + '[2J')
+        }
+        else { try { [Console]::Clear(); [Console]::CursorVisible = $oldVisible } catch { } }
+        if ($terminalState.Changed) {
+            try { [void][LlcMenuConsoleMode]::SetConsoleMode($terminalState.Handle, $terminalState.OriginalMode) } catch { }
+        }
+        try { [Console]::ForegroundColor = $oldForeground; [Console]::BackgroundColor = $oldBackground; [Console]::OutputEncoding = $oldEncoding } catch { }
+    }
+}
+
+function Get-LlcMainMenuItems {
+    param([string]$GpuText='GPU', [string]$DriverText='Drivers', [string]$MmcssText='MMCSS')
+    @(
+        [pscustomobject]@{ Text='Preflight / About v2'; Value='preflight'; Selectable=$true; Description='Host and resource checks. No system tweaks are applied.' },
+        [pscustomobject]@{ Text='System and registry'; Selectable=$false },
+        [pscustomobject]@{ Text='Auto Registry Tweaks'; Value='autoRegistryTweaks'; Selectable=$true; Description='Broad system changes. Review the list and type AUTO to confirm.' },
+        [pscustomobject]@{ Text='UAC'; Value='uac'; Selectable=$true; Description='Enable or disable User Account Control.' },
+        [pscustomobject]@{ Text='QOL'; Value='qol'; Selectable=$true; Description='Explorer, profiles, OneDrive and taskbar. Type QOL to confirm.' },
+        [pscustomobject]@{ Text='Fullscreen Optimization'; Value='fullscreenOptimization'; Selectable=$true },
+        [pscustomobject]@{ Text='Gamebar and Game Mode'; Value='gamebarAndGameMode'; Selectable=$true },
+        [pscustomobject]@{ Text='Services'; Value='services'; Selectable=$true; Description='Service startup presets. Restore defaults is not a full backup.' },
+        [pscustomobject]@{ Text='Powersaving'; Value='powersaving'; Selectable=$true },
+        [pscustomobject]@{ Text='Network Optimization'; Value='networkOptimization'; Selectable=$true; Description='Wired Ethernet settings. Review the documented parameters first.' },
+        [pscustomobject]@{ Text=$MmcssText; Value='mmcss'; Selectable=$true },
+        [pscustomobject]@{ Text='Win32PrioritySeparation'; Value='win32PrioritySeparation'; Selectable=$true },
+        [pscustomobject]@{ Text='Clock Interrupts'; Value='clockInterrupts'; Selectable=$true },
+        [pscustomobject]@{ Text='Hardware-Accelerated GPU Scheduling'; Value='hags'; Selectable=$true },
+        [pscustomobject]@{ Text=$GpuText; Value='gpu'; Selectable=$true },
+        [pscustomobject]@{ Text='Drivers and apps'; Selectable=$false },
+        [pscustomobject]@{ Text=$DriverText; Value='drivers'; Selectable=$true },
+        [pscustomobject]@{ Text='Apps'; Value='apps'; Selectable=$true },
+        [pscustomobject]@{ Text='Other'; Selectable=$false },
+        [pscustomobject]@{ Text='Autostart'; Value='autostart'; Selectable=$true },
+        [pscustomobject]@{ Text='Power Plan'; Value='powerPlan'; Selectable=$true },
+        [pscustomobject]@{ Text='Activate Windows'; Value='activateWindows'; Selectable=$true },
+        [pscustomobject]@{ Text='Exit'; Value='exit'; Selectable=$true; Description='Close the menu without starting another action.' }
+    )
+}
+
+# A UI-only entry point must exit before host checks, transcript and system initialization.
+if ($env:LLC_MENU_DEMO -eq '1') {
+    $demoItems = @(Get-LlcMainMenuItems -GpuText 'GPU - demo adapter' -DriverText 'Drivers - demo adapter' -MmcssText 'MMCSS - demo stack')
+    if ($env:LLC_MENU_SNAPSHOT -eq '1') {
+        $demoFrame = Get-LlcMenuFrame -Title 'UI PREVIEW - no system changes' -Items $demoItems -SelectedIndex 0 -Width 80 -Height 30
+        [Console]::WriteLine(($demoFrame.Lines -join [Environment]::NewLine))
+    } else {
+        $demoChoice = Invoke-Menu -Title 'UI PREVIEW - no system changes' -Items $demoItems
+        [Console]::WriteLine('UI preview closed. No settings were applied.')
+    }
+    exit 0
+}
+
 
 $llcPreflight = Get-LlcPreflightResult
 if ($env:LLC_RUN_CHECK -eq '1') {
@@ -366,209 +702,6 @@ function Write-BoxTitle {
     Write-Host ('+' + ('=' * $innerWidth) + '+') -ForegroundColor White
 }
 
-function Invoke-Menu {
-    param(
-        [Parameter(Mandatory=$true)][string]$Title,
-        [Parameter(Mandatory=$true)][object[]]$Items
-    )
-
-    $getMenuItemText = {
-        param([object]$Item)
-
-        if ($null -eq $Item) { return '' }
-        if ($Item -is [string]) { return [string]$Item }
-
-        $textProperty = $Item.PSObject.Properties['Text']
-        if ($null -ne $textProperty) { return [string]$textProperty.Value }
-
-        return [string]$Item
-    }
-
-    $isMenuItemSelectable = {
-        param([object]$Item)
-
-        if ($null -eq $Item) { return $false }
-        if ($Item -is [string]) { return $true }
-
-        $selectableProperty = $Item.PSObject.Properties['Selectable']
-        if ($null -ne $selectableProperty) { return [bool]$selectableProperty.Value }
-
-        $kindProperty = $Item.PSObject.Properties['Kind']
-        if (($null -ne $kindProperty) -and ([string]$kindProperty.Value -eq 'Header')) { return $false }
-
-        return $true
-    }
-
-    $getMenuItemReturnValue = {
-        param(
-            [object]$Item,
-            [int]$ItemIndex
-        )
-
-        if ($Item -isnot [string]) {
-            $valueProperty = $Item.PSObject.Properties['Value']
-            if ($null -ne $valueProperty) { return $valueProperty.Value }
-        }
-
-        return $ItemIndex
-    }
-
-    $getNextSelectableIndex = {
-        param(
-            [int]$CurrentIndex,
-            [int]$Direction
-        )
-
-        if (($null -eq $Items) -or ($Items.Count -le 0)) { return -1 }
-
-        $candidate = $CurrentIndex
-        for ($attempt = 0; $attempt -lt $Items.Count; $attempt++) {
-            $candidate += $Direction
-            if ($candidate -lt 0) { $candidate = $Items.Count - 1 }
-            if ($candidate -ge $Items.Count) { $candidate = 0 }
-
-            if (& $isMenuItemSelectable ($Items[$candidate])) { return $candidate }
-        }
-
-        return -1
-    }
-
-    if (($null -eq $Items) -or ($Items.Count -le 0)) { return -1 }
-
-    $index = 0
-    if (-not (& $isMenuItemSelectable ($Items[$index]))) {
-        $index = & $getNextSelectableIndex $index 1
-        if ($index -lt 0) { return -1 }
-    }
-
-    try {
-        $oldCursorVisible = [Console]::CursorVisible
-    } catch {
-        $oldCursorVisible = $true
-    }
-
-    try {
-        try { [Console]::ResetColor() } catch { }
-        Clear-ConsoleInputBuffer
-        Clear-ConsoleScreen
-        try { [Console]::CursorVisible = $false } catch { }
-
-        Write-BoxTitle -Title $Title
-        Write-Host ""
-
-        $itemTop = [Console]::CursorTop
-        Ensure-ConsoleBufferHeight -RequiredHeight ($itemTop + $Items.Count + 2)
-        $writeMenuItemLine = {
-            param(
-                [Parameter(Mandatory=$true)][int]$ItemIndex,
-                [Parameter(Mandatory=$true)][bool]$Selected
-            )
-
-            if (-not (Set-ConsoleCursorPositionSafe -Left 0 -Top ($itemTop + $ItemIndex))) { return }
-
-            $item = $Items[$ItemIndex]
-            $label = & $getMenuItemText $item
-            $selectable = & $isMenuItemSelectable $item
-
-            if ($selectable) {
-                if ($Selected) {
-                    $text = "> " + $label
-                } else {
-                    $text = "  " + $label
-                }
-            } else {
-                $text = $label
-            }
-
-            try {
-                $width = [Math]::Max(1, ([Math]::Min([Console]::WindowWidth, [Console]::BufferWidth) - 1))
-            } catch {
-                $width = 120
-            }
-            if ($text.Length -gt $width) {
-                $text = $text.Substring(0, $width)
-            }
-            $text = $text.PadRight($width)
-
-            if ($Selected -and $selectable) {
-                Write-Host $text -ForegroundColor Cyan -NoNewline
-            } elseif (-not $selectable) {
-                Write-Host $text -ForegroundColor DarkGray -NoNewline
-            } else {
-                Write-Host $text -ForegroundColor White -NoNewline
-            }
-        }
-
-        for ($i = 0; $i -lt $Items.Count; $i++) {
-            & $writeMenuItemLine $i (($i -eq $index) -and (& $isMenuItemSelectable ($Items[$i])))
-        }
-
-        [void](Set-ConsoleCursorPositionSafe -Left 0 -Top ($itemTop + $Items.Count))
-        Write-Host ""
-        $inputLine = [Console]::CursorTop
-        [void](Set-ConsoleCursorPositionSafe -Left 0 -Top $inputLine)
-
-        $getConsoleSignature = {
-            try {
-                return ('{0}x{1}:{2}x{3}' -f [Console]::WindowWidth, [Console]::WindowHeight, [Console]::BufferWidth, [Console]::BufferHeight)
-            } catch {
-                return 'unknown'
-            }
-        }
-        $lastConsoleSignature = & $getConsoleSignature
-        $navigationStopwatch = [Diagnostics.Stopwatch]::StartNew()
-        $lastNavigationMoveMilliseconds = [int64]-1
-        $minimumNavigationIntervalMilliseconds = 24
-
-        while ($true) {
-            while (-not [Console]::KeyAvailable) {
-                Start-Sleep -Milliseconds 10
-                $currentConsoleSignature = & $getConsoleSignature
-                if ($currentConsoleSignature -ne $lastConsoleSignature) {
-                    Clear-ConsoleScreen
-                    Write-BoxTitle -Title $Title
-                    Write-Host ""
-                    $itemTop = [Console]::CursorTop
-                    Ensure-ConsoleBufferHeight -RequiredHeight ($itemTop + $Items.Count + 2)
-
-                    for ($i = 0; $i -lt $Items.Count; $i++) {
-                        & $writeMenuItemLine $i (($i -eq $index) -and (& $isMenuItemSelectable ($Items[$i])))
-                    }
-
-                    [void](Set-ConsoleCursorPositionSafe -Left 0 -Top ($itemTop + $Items.Count))
-                    Write-Host ""
-                    $inputLine = [Console]::CursorTop
-                    [void](Set-ConsoleCursorPositionSafe -Left 0 -Top $inputLine)
-                    $lastConsoleSignature = $currentConsoleSignature
-                }
-            }
-
-            $key = [Console]::ReadKey($true)
-            if (-not (Test-ConsoleNavigationInputAccepted -Key $key.Key -Stopwatch $navigationStopwatch -LastMoveMilliseconds ([ref]$lastNavigationMoveMilliseconds) -MinimumIntervalMilliseconds $minimumNavigationIntervalMilliseconds)) {
-                continue
-            }
-
-            $previousIndex = $index
-
-            switch ($key.Key) {
-                'UpArrow'   { $newIndex = & $getNextSelectableIndex $index -1; if ($newIndex -ge 0) { $index = $newIndex } }
-                'DownArrow' { $newIndex = & $getNextSelectableIndex $index 1; if ($newIndex -ge 0) { $index = $newIndex } }
-                'Enter'     { Clear-ConsoleInputBuffer -DelayMilliseconds 75; return (& $getMenuItemReturnValue ($Items[$index]) $index) }
-                'Escape'    { Clear-ConsoleInputBuffer -DelayMilliseconds 75; return -1 }
-            }
-
-            if ($index -ne $previousIndex) {
-                & $writeMenuItemLine $previousIndex $false
-                & $writeMenuItemLine $index $true
-                [void](Set-ConsoleCursorPositionSafe -Left 0 -Top $inputLine)
-            }
-        }
-    }
-    finally {
-        try { [Console]::CursorVisible = $oldCursorVisible } catch { }
-        try { [Console]::ResetColor() } catch { }
-    }
-}
 
 function Test-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -12511,33 +12644,8 @@ try {
 }
 
 while ($true) {
-    $choice = Invoke-Menu -Title 'Low Latency Corp Menu v2' -Items @(
-        [pscustomobject]@{ Text='Preflight / About v2'; Value='preflight'; Selectable=$true },
-        [pscustomobject]@{ Text='Registry:'; Selectable=$false },
-        [pscustomobject]@{ Text='Auto Registry Tweaks'; Value='autoRegistryTweaks'; Selectable=$true },
-        [pscustomobject]@{ Text='UAC'; Value='uac'; Selectable=$true },
-        [pscustomobject]@{ Text='QOL'; Value='qol'; Selectable=$true },
-        [pscustomobject]@{ Text='Fullscreen Optimization'; Value='fullscreenOptimization'; Selectable=$true },
-        [pscustomobject]@{ Text='Gamebar and Game Mode'; Value='gamebarAndGameMode'; Selectable=$true },
-        [pscustomobject]@{ Text='Services'; Value='services'; Selectable=$true },
-        [pscustomobject]@{ Text='Powersaving'; Value='powersaving'; Selectable=$true },
-        [pscustomobject]@{ Text='Network Optimization'; Value='networkOptimization'; Selectable=$true },
-        [pscustomobject]@{ Text=(Get-DetectedNetworkAdapterMenuEntryText -Base 'MMCSS'); Value='mmcss'; Selectable=$true },
-        [pscustomobject]@{ Text='Win32PrioritySeparation'; Value='win32PrioritySeparation'; Selectable=$true },
-        [pscustomobject]@{ Text='Clock Interrupts'; Value='clockInterrupts'; Selectable=$true },
-        [pscustomobject]@{ Text='Hardware-Accelerated GPU Scheduling'; Value='hags'; Selectable=$true },
-        [pscustomobject]@{ Text=(Get-DetectedGpuMenuEntryText -Base 'GPU'); Value='gpu'; Selectable=$true },
-        [pscustomobject]@{ Text=''; Selectable=$false },
-        [pscustomobject]@{ Text='Drivers and Apps:'; Selectable=$false },
-        [pscustomobject]@{ Text=(Get-DetectedGpuMenuEntryText -Base 'Drivers'); Value='drivers'; Selectable=$true },
-        [pscustomobject]@{ Text='Apps'; Value='apps'; Selectable=$true },
-        [pscustomobject]@{ Text=''; Selectable=$false },
-        [pscustomobject]@{ Text='Other:'; Selectable=$false },
-        [pscustomobject]@{ Text='Autostart'; Value='autostart'; Selectable=$true },
-        [pscustomobject]@{ Text='Power Plan'; Value='powerPlan'; Selectable=$true },
-        [pscustomobject]@{ Text='Activate Windows'; Value='activateWindows'; Selectable=$true },
-        [pscustomobject]@{ Text='Exit'; Value='exit'; Selectable=$true }
-    )
+    $mainMenuItems = @(Get-LlcMainMenuItems -GpuText (Get-DetectedGpuMenuEntryText -Base 'GPU') -DriverText (Get-DetectedGpuMenuEntryText -Base 'Drivers') -MmcssText (Get-DetectedNetworkAdapterMenuEntryText -Base 'MMCSS'))
+    $choice = Invoke-Menu -Title 'Low Latency Corp Menu v2' -Items $mainMenuItems
 
     switch ($choice) {
         'preflight' {

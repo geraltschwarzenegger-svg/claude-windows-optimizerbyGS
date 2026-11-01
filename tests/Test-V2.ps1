@@ -231,8 +231,14 @@ Test-Case 'preflight exit precedes transcripts and native initialization' {
     })
     Assert-True ($checkBranch.Count -eq 1) 'Missing unique check branch.'
     $firstSensitiveCommand = @($asts.v2.FindAll({ param($node)
-        $node -is [System.Management.Automation.Language.CommandAst] -and
-        $node.GetCommandName() -in @('Start-Transcript', 'Add-Type', 'Initialize-TrustedInstallerToken')
+        if ($node -isnot [System.Management.Automation.Language.CommandAst] -or
+            $node.GetCommandName() -notin @('Start-Transcript', 'Add-Type', 'Initialize-TrustedInstallerToken')) { return $false }
+        # A function declaration does not execute its Add-Type body. Inspect
+        # commands that can actually run while the script initializes.
+        for ($parent = $node.Parent; $null -ne $parent; $parent = $parent.Parent) {
+            if ($parent -is [System.Management.Automation.Language.FunctionDefinitionAst]) { return $false }
+        }
+        return $true
     }, $true) | Sort-Object { $_.Extent.StartOffset })[0]
     Assert-True ($checkBranch[0].Extent.EndOffset -lt $firstSensitiveCommand.Extent.StartOffset) 'Preflight must precede native initialization.'
     Assert-True ($checkBranch[0].Clauses[0].Item2.Statements[-1] -is [System.Management.Automation.Language.ExitStatementAst]) 'Check branch must exit unconditionally.'
