@@ -237,6 +237,25 @@ Test-Case 'branding, companion separation and full RSS backup are wired into the
     Assert-True ($calls.Count -eq 5) 'Manual/Auto/Alternate RSS branches not centralized.'
     Assert-True (-not ($source -match '(?<!\])\b1 -shl \$(?:assignmentCore|coreIndex|secretGroupCore|ecore|core|c)\b')) 'Int32 logical-processor shift remains.'
 }
+Test-Case 'actual window icon embeds the Exovance asset with small and large frames' {
+    $assignment=$app.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$base64Icon'},$true)
+    $script:ExovanceIconBytes=[Convert]::FromBase64String($assignment.Right.Expression.Value)
+    $asset=[IO.File]::ReadAllBytes((Join-Path $folder 'Exovance.ico'))
+    Assert-True ([Convert]::ToBase64String($script:ExovanceIconBytes) -eq [Convert]::ToBase64String($asset)) 'Application still embeds a different icon.'
+    Assert-True ([BitConverter]::ToUInt16($asset,0) -eq 0 -and [BitConverter]::ToUInt16($asset,2) -eq 1) 'Asset is not a Windows ICO.'
+    $count=[BitConverter]::ToUInt16($asset,4)
+    $sizes=@()
+    for($i=0;$i -lt $count;$i++) {
+        $entry=6+16*$i
+        $size=if($asset[$entry] -eq 0){256}else{[int]$asset[$entry]}
+        $sizes+=$size
+        $length=[BitConverter]::ToUInt32($asset,$entry+8)
+        $offset=[BitConverter]::ToUInt32($asset,$entry+12)
+        Assert-True ($length -gt 0 -and $offset -ge 6+16*$count -and ([long]$offset+$length) -le $asset.Length) 'Invalid icon frame bounds.'
+    }
+    foreach($size in @(16,20,24,32,48,64,256)) { Assert-True ($sizes -contains $size) ('Missing icon size: '+$size) }
+    Assert-True ($source.Contains('$form.Icon = $icon')) 'Icon not assigned to application window.'
+}
 Test-Case 'main menu includes separate v2 and original launch paths' {
     $cmd=[IO.File]::ReadAllText((Join-Path $repo 'Low-Latency-Corp-Menu_v2.cmd'))
     Assert-True ($cmd.Contains('Launch Exovance v2') -and $cmd.Contains('Launch original Device Tweaker')) 'Missing launch choices.'
@@ -318,6 +337,24 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
             $grid.Dispose()
             foreach($field in $fonts.GetType().GetFields()) { $value=$field.GetValue($fonts); if($value -is [System.IDisposable]){$value.Dispose()} }
         }
+    }
+    Test-Case 'Windows decodes the embedded Exovance title-bar icon' {
+        $stream=[IO.MemoryStream]::new($script:ExovanceIconBytes,$false)
+        try {
+            $icon=[Drawing.Icon]::new($stream,16,16)
+            try {
+                $bitmap=$icon.ToBitmap()
+                try {
+                    Assert-True ($bitmap.Width -eq 16 -and $bitmap.Height -eq 16) 'Small title-bar icon missing.'
+                    $mint=0
+                    for($y=0;$y -lt 16;$y++) { for($x=0;$x -lt 16;$x++) {
+                        $pixel=$bitmap.GetPixel($x,$y)
+                        if($pixel.A -gt 128 -and $pixel.G -gt 140 -and $pixel.G -gt $pixel.R+40 -and $pixel.B -gt 100){$mint++}
+                    } }
+                    Assert-True ($mint -ge 20) 'Decoded icon has no visible Exovance mint symbol.'
+                } finally { $bitmap.Dispose() }
+            } finally { $icon.Dispose() }
+        } finally { $stream.Dispose() }
     }
     Test-Case 'native CPU grid keyboard selection and paint preserve high mask bits' {
         $grid=New-Object CpuAffinityGrid
