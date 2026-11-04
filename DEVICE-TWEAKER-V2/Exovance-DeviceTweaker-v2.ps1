@@ -2994,6 +2994,35 @@ public static class ExovancePalette
     }
 }
 
+public static class ExovanceRssTopology
+{
+    public static int[] PhysicalIds;
+    // Same rule as Get-ExovanceRssPlan: one logical processor per physical
+    // core, starting at the selected base, never wrapping to CPU zero.
+    public static int[] GetProcessors(int baseProcessor, int queueCount, int logicalCount)
+    {
+        if (logicalCount < 1 || logicalCount > 64 || baseProcessor < 0 || baseProcessor >= logicalCount || queueCount < 1) { return new int[0]; }
+        List<int> processors = new List<int>();
+        HashSet<int> physical = new HashSet<int>();
+        int[] ids = PhysicalIds;
+        for (int cpu = baseProcessor; cpu < logicalCount; cpu++)
+        {
+            int unit = ids != null && ids.Length == logicalCount ? ids[cpu] : cpu;
+            if (physical.Add(unit)) {
+                processors.Add(cpu);
+                if (processors.Count == queueCount) { return processors.ToArray(); }
+            }
+        }
+        return new int[0];
+    }
+    public static ulong GetMask(int baseProcessor, int queueCount, int logicalCount)
+    {
+        ulong mask = 0UL;
+        foreach (int cpu in GetProcessors(baseProcessor, queueCount, logicalCount)) { mask |= 1UL << cpu; }
+        return mask;
+    }
+}
+
 public static class ExovanceInteractionState
 {
     public static event EventHandler SelectionChanged;
@@ -14355,7 +14384,7 @@ public static class DeviceEditorBuilder
         reservedPanel.Left = 10;
         reservedPanel.Top = 20;
         reservedPanel.Width = panelW;
-        reservedPanel.Height = topPad + ((maxRows - 1) * rowH) + 20 + topPad + 2;
+        reservedPanel.Height = topPad + ((maxRows - 1) * rowH) + Math.Max(20, rowH - 6) + topPad + 2;
         reservedPanel.AutoScroll = false;
         reservedPanel.BorderStyle = BorderStyle.FixedSingle;
         if (theme.Black != Color.Empty) { reservedPanel.BackColor = theme.Black; }
@@ -14524,9 +14553,9 @@ public static class DeviceEditorBuilder
         int topPad = Math.Max(0, metrics.TopPad);
         int visibleRows = maxCoresPerColumn;
         int affPanelLeft = 10;
-        int affPanelTop = 20 + bodyTopOffset;
+        int affPanelTop = 30 + bodyTopOffset;
         int affPanelWidth = Math.Max(1, metrics.AffPanelWidth);
-        int affPanelHeight = topPad + ((visibleRows - 1) * rowHeight) + 20 + topPad + 2;
+        int affPanelHeight = topPad + ((visibleRows - 1) * rowHeight) + Math.Max(20, rowHeight - 6) + topPad + 2;
         DeviceEditorBorderElement affPanelBorder = groupBox.AddBorderElement(affPanelLeft, affPanelTop, affPanelWidth, affPanelHeight, theme.Black, SystemColors.ControlDark);
 
         CpuAffinityGrid cpuGrid = new CpuAffinityGrid();
@@ -14572,24 +14601,24 @@ public static class DeviceEditorBuilder
             if (selectedBase >= 0)
             {
                 ulong mask = CalculateNdisMask(selectedBase, currentNumQueues, Math.Max(1, logicalCount), Math.Max(1, metrics.RssHtStep));
-                lblMaskValue.Text = "0x" + mask.ToString("X");
+                lblMaskValue.Text = mask == 0UL ? "Invalid RSS range" : "0x" + mask.ToString("X");
             }
             else { lblMaskValue.Text = "0x0"; }
         }
         else { lblMaskValue.Text = initialValue; }
 
-        int msiPanelWidth = metrics.DeviceTweakerMsiPanelWidth > 0 ? metrics.DeviceTweakerMsiPanelWidth : 300;
-        int msiPanelHeight = isNdis ? 165 : 163;
+        int msiPanelWidth = metrics.DeviceTweakerMsiPanelWidth > 0 ? metrics.DeviceTweakerMsiPanelWidth : 360;
+        int msiPanelHeight = 195;
         int msiPanelLeft = groupBox.Width - msiPanelWidth - 5;
-        int msiPanelTop = 20 + bodyTopOffset;
+        int msiPanelTop = 30 + bodyTopOffset;
         DeviceEditorBorderElement msiPanel = groupBox.AddBorderElement(msiPanelLeft, msiPanelTop, msiPanelWidth, msiPanelHeight, theme.Black, SystemColors.ControlDark);
         List<Control> msiPanelControls = new List<Control>(10);
         int msiLabelLeft = msiPanel.Left + 10;
-        int msiInputLeft = msiPanel.Left + 152;
+        int msiInputLeft = msiPanel.Left + 170;
         int msiInputRightPadding = 16;
-        int msiInputWidth = Math.Max(1, Math.Min(132, msiPanel.Right - msiInputLeft - msiInputRightPadding));
+        int msiInputWidth = Math.Max(1, Math.Min(180, msiPanel.Right - msiInputLeft - msiInputRightPadding));
         int msiControlTop = msiPanel.Top + 5;
-        int msiRowStep = 36;
+        int msiRowStep = 42;
         int msiLabelYOffset = 5;
 
         DeviceEditorTextElement lblMSI = Text(groupBox, "MSI Mode:", msiLabelLeft, msiControlTop + msiLabelYOffset, theme.Font11, theme.LightGray, true);
@@ -14670,7 +14699,7 @@ public static class DeviceEditorBuilder
         string pnpId = Safe(state.PnpId);
         DeviceEditorTextElement lblPolicy = Text(groupBox, "IRQ Policy:", msiLabelLeft, msiControlTop + (msiRowStep * 3) + msiLabelYOffset, theme.Font11, theme.LightGray, true);
         lblPolicy.Visible = !isNdis;
-        ComboBox cboPolicy = Combo(msiPanel.Left + 123, msiControlTop + (msiRowStep * 3), 169, theme.Font12, theme, PolicyItems);
+        ComboBox cboPolicy = Combo(msiInputLeft, msiControlTop + (msiRowStep * 3), msiInputWidth, theme.Font12, theme, PolicyItems);
         cboPolicy.Visible = !isNdis;
         DeviceTweakerUiHandlers.WireDarkCombo(cboPolicy);
         msiPanelControls.Add(cboPolicy);
@@ -14934,12 +14963,11 @@ public static class DeviceEditorBuilder
         if (cells == null) { return 0UL; }
         bool[] selected = new bool[Math.Max(logicalCount, cells.Length)];
         ulong mask = 0UL;
-        for (int i = 0; i < Math.Max(1, queueCount); i++)
-        {
-            int core = PositiveModulo(baseCore + (i * step), logicalCount);
-            if (core >= 0 && core < selected.Length) { selected[core] = true; }
-            if (core >= 0 && core < 64) { mask |= (1UL << core); }
-        }
+        int[] processors = ExovanceRssTopology.GetProcessors(baseCore, queueCount, logicalCount);
+        foreach (int core in processors) { selected[core] = true; mask |= 1UL << core; }
+        // Keep the requested base visible on an invalid range so Apply can
+        // reject that exact selection before making any registry changes.
+        if (processors.Length == 0 && baseCore >= 0 && baseCore < selected.Length) { selected[baseCore] = true; }
         for (int i = 0; i < cells.Length; i++)
         {
             CpuAffinityGridCell cell = cells[i];
@@ -14954,13 +14982,7 @@ public static class DeviceEditorBuilder
 
     private static ulong CalculateNdisMask(int baseCore, int queueCount, int logicalCount, int step)
     {
-        ulong mask = 0UL;
-        for (int i = 0; i < Math.Max(1, queueCount); i++)
-        {
-            int core = PositiveModulo(baseCore + (i * step), logicalCount);
-            if (core >= 0 && core < 64) { mask |= (1UL << core); }
-        }
-        return mask;
+        return ExovanceRssTopology.GetMask(baseCore, queueCount, logicalCount);
     }
 
     private static int PositiveModulo(int value, int divisor)
@@ -15543,7 +15565,7 @@ public static class DeviceTweakerUiHandlers
         try
         {
             ulong mask = ApplyNdisBaseSelection(state, selectedBase, queueCount);
-            SetMaskText(state, "0x" + mask.ToString("X"));
+            SetMaskText(state, mask == 0UL ? "Invalid RSS range - reduce queues" : "0x" + mask.ToString("X"));
         }
         finally { state.Updating = false; }
     }
@@ -15590,7 +15612,7 @@ public static class DeviceTweakerUiHandlers
                 if (selectedBase >= 0)
                 {
                     ulong mask = ApplyNdisBaseSelection(state, selectedBase, queues);
-                    SetMaskText(state, "0x" + mask.ToString("X"));
+                    SetMaskText(state, mask == 0UL ? "Invalid RSS range - reduce queues" : "0x" + mask.ToString("X"));
                 }
                 else
                 {
@@ -15636,7 +15658,7 @@ public static class DeviceTweakerUiHandlers
                 try
                 {
                     ulong mask = ApplyNdisBaseSelection(state, e.CpuIndex, queues);
-                    SetMaskText(state, "0x" + mask.ToString("X"));
+                    SetMaskText(state, mask == 0UL ? "Invalid RSS range - reduce queues" : "0x" + mask.ToString("X"));
                 }
                 finally { state.Updating = false; }
             }
@@ -15689,12 +15711,11 @@ public static class DeviceTweakerUiHandlers
         int step = Math.Max(1, state.RssHtStep);
         bool[] selected = new bool[Math.Max(logical, state.Cells.Length)];
         ulong mask = 0UL;
-        for (int i = 0; i < queueCount; i++)
-        {
-            int core = PositiveModulo(baseCore + (i * step), logical);
-            if (core >= 0 && core < selected.Length) { selected[core] = true; }
-            if (core >= 0 && core < 64) { mask |= (1UL << core); }
-        }
+        int[] processors = ExovanceRssTopology.GetProcessors(baseCore, queueCount, logical);
+        foreach (int core in processors) { selected[core] = true; mask |= 1UL << core; }
+        // Keep the requested base visible on an invalid range so Apply can
+        // reject that exact selection before making any registry changes.
+        if (processors.Length == 0 && baseCore >= 0 && baseCore < selected.Length) { selected[baseCore] = true; }
         for (int i = 0; i < state.Cells.Length; i++)
         {
             CpuAffinityGridCell cell = state.Cells[i];
@@ -16003,7 +16024,7 @@ public sealed class CpuAffinityGrid : Control
         MaxCoresPerColumn = 8;
         Columns = 4;
         ColumnWidth = 86;
-        RowHeight = 25;
+        RowHeight = 32;
         TopPad = 0;
         TextVerticalOffset = 1;
         PCoreColor = Color.FromArgb(219, 219, 219);
@@ -16308,7 +16329,7 @@ public sealed class CpuAffinityGrid : Control
         int row = index % maxRows;
         int x = 2 + (col * Math.Max(1, ColumnWidth));
         int y = TopPad + (row * Math.Max(1, RowHeight));
-        return new Rectangle(x, y, GetCpuCellWidth(index), 20);
+        return new Rectangle(x, y, GetCpuCellWidth(index), Math.Max(20, RowHeight - 6));
     }
 
     public Rectangle GetAnnotationBounds(int index)
@@ -16316,7 +16337,7 @@ public sealed class CpuAffinityGrid : Control
         Rectangle cpu = GetCpuBounds(index);
         int offset = GetCpuCellWidth(index) - 3;
         if (_cppcLabelOffsets != null && index >= 0 && index < _cppcLabelOffsets.Length) { offset = _cppcLabelOffsets[index]; }
-        return new Rectangle(cpu.Left + offset, cpu.Top + 3, Math.Max(1, CppcLabelWidth), 14);
+        return new Rectangle(cpu.Left + offset, cpu.Top + 3, Math.Max(1, CppcLabelWidth), Math.Max(14, cpu.Height - 4));
     }
 
     public void InvalidateCpu(int index)
@@ -16437,7 +16458,7 @@ public sealed class CpuAffinityGrid : Control
         using (SolidBrush brush = new SolidBrush(fill))
         using (Pen edge = new Pen(ExovancePalette.CpuBorder(selected, hovered))) { g.FillPath(brush, path); g.DrawPath(edge, path); }
         int x = tile.Left + 4;
-        int y = tile.Top + 5;
+        int y = tile.Top + Math.Max(4, (tile.Height - 9) / 2);
         if (selected)
         {
             using (Pen check = new Pen(ExovancePalette.Accent, 1.7f)) {
@@ -28973,11 +28994,11 @@ public static class DeviceTweakerFormFactory
     {
         family = new FontFamily("Segoe UI");
         return new DeviceTweakerFontCacheNative {
-            Font9 = new Font(family, 9.0f), Font7_5 = new Font(family, 8.0f),
+            Font9 = new Font(family, 11.0f), Font7_5 = new Font(family, 9.0f),
             Font9Underline = new Font(family, 9.0f, FontStyle.Underline),
-            Font10 = new Font(family, 10.0f), Font11 = new Font(family, 10.0f),
-            Font12 = new Font(family, 11.0f), Font13 = new Font(family, 12.0f),
-            Font22 = new Font(family, 11.0f), Font22Bold = new Font(family, 24.0f, FontStyle.Bold),
+            Font10 = new Font(family, 12.0f), Font11 = new Font(family, 12.0f),
+            Font12 = new Font(family, 12.0f), Font13 = new Font(family, 13.0f),
+            Font22 = new Font(family, 13.0f), Font22Bold = new Font(family, 24.0f, FontStyle.Bold),
             Font26 = new Font(family, 26.0f, FontStyle.Bold), Segoe22 = new Font("Segoe UI Symbol", 20.0f)
         };
     }
@@ -29182,7 +29203,7 @@ public static class DeviceTweakerFormFactory
 
         if (maxRight <= 0) { return; }
 
-        float minSize = 18.0f;
+        float minSize = 10.0f;
         for (float size = statusFont.SizeInPoints - 0.5f; size >= minSize; size -= 0.5f)
         {
             Font fittedFont = new Font(statusFont.FontFamily, size, statusFont.Style, GraphicsUnit.Point);
@@ -29240,7 +29261,7 @@ public static class DeviceTweakerFormFactory
         button.Text = text ?? String.Empty;
         button.AccessibleName = button.Text;
         button.Primary = text == "APPLY";
-        button.Height = 46;
+        button.Height = 56;
         button.BackColor = ExovancePalette.Raised;
         button.ForeColor = ExovancePalette.Text;
         button.Font = font;
@@ -40864,6 +40885,19 @@ $script:_startupNetworkRows = @($_networkRowsForStartupModel)
 
 $_sw_device_list.Stop()
 
+function Set-ExovanceReadOnlyAdapterUI {
+    foreach ($device in $deviceList) {
+        if ($device.Category -ne 'Network' -or (Test-ExovanceNetworkWritable $device)) { continue }
+        $controls = $deviceControls[$device]
+        if ($null -eq $controls) { continue }
+        if ($null -ne $controls.NativeState -and $null -ne $controls.NativeState.GroupBox) {
+            $controls.NativeState.GroupBox.Enabled = $false
+        }
+        if ($null -ne $controls.MaskLabel) { $controls.MaskLabel.Text = 'Exovance: ' }
+        if ($null -ne $controls.MaskValue) { $controls.MaskValue.Text = 'Read only - unsupported network adapter' }
+    }
+}
+
 function Refresh-DeviceUI {
     foreach ($device in $deviceList) {
         $ctrls = $deviceControls[$device]
@@ -40918,10 +40952,15 @@ function Refresh-DeviceUI {
             $logicalCount = $script:cachedLogicalCount
 
             $selectedSet = [System.Collections.ArrayList]::new()
+            $rssRangeInvalid = $false
             if ($selectedBase -ge 0) {
-                for ($i = 0; $i -lt $numQueues; $i++) {
-                    $c = ($selectedBase + $i * $script:rssHtStep) % $logicalCount
-                    $selectedSet.Add($c) | Out-Null
+                try {
+                    $rssPlan = Get-ExovanceRssPlan -BaseProcessor $selectedBase -QueueCount $numQueues -LogicalCount $logicalCount -PhysicalCoreMap $script:PhysicalCoreIdByLogicalProcessor
+                    foreach ($c in $rssPlan.Processors) { $selectedSet.Add($c) | Out-Null }
+                } catch {
+                    # Retain the invalid requested base; never fabricate a wrapped plan.
+                    $selectedSet.Add($selectedBase) | Out-Null
+                    $rssRangeInvalid = $true
                 }
             }
 
@@ -40941,7 +40980,7 @@ function Refresh-DeviceUI {
             if ($selectedBase -ge 0) {
                 $maskInt = [uint64]0
                 foreach ($c in $selectedSet) { $maskInt = $maskInt -bor ([uint64]1 -shl $c) }
-                $displayVal = "0x" + ([Convert]::ToString($maskInt,16)).ToUpper()
+                $displayVal = if ($rssRangeInvalid) { 'Invalid RSS range - reduce queues' } else { "0x" + $maskInt.ToString('X') }
             } else {
                 $displayVal = "0x0"
             }
@@ -41031,6 +41070,8 @@ function Refresh-DeviceUI {
         $reservedArr = [ReservedCpuSetsUiNative]::GetReservedCoresLocal([int]$script:cachedLogicalCount, $script:StartupModel)
         [ReservedCpuSetsUiNative]::ApplyReservedColoring($deviceList, $deviceControls, $script:reservedCheckboxes, $reservedArr, [bool]$script:IsDualCCDCpu, $script:Ccd0CoreSet, $script:Ccd1CoreSet, $script:_isPCoreLookup)
     } catch { }
+    Set-ExovanceReadOnlyAdapterUI
+
 }
 
 function Get-FreeCore {
@@ -41919,7 +41960,7 @@ function Add-SmtSetOverlays {
     $TargetPanel.Add_Paint($paintHandler)
 }
 
-$cppcFormWidth = if ($script:cppcEnabled) { 835 } else { 827 }
+$cppcFormWidth = 1180
 $__dtMainShell = [DeviceTweakerFormFactory]::CreateMainShell($cppcFormWidth, $script:fontCache11, $script:colBlack)
 $form = $__dtMainShell.Form
 $panel = $__dtMainShell.Panel
@@ -42258,7 +42299,7 @@ function script:Get-AffinityLayoutMetrics {
     return @{
         ColumnWidth         = $colStep
         Columns             = $cols
-        RowHeight           = 25
+        RowHeight           = 32
         TopPad              = $topPad
         PanelWidth          = $panW
         MaxCoresPerColumn   = $maxPerCol
@@ -42523,7 +42564,7 @@ if ($_hasHdaControls) {
 }
 $script:extensionMinGroupBoxWidth = [Math]::Max([Math]::Max($script:pciAspmMinGroupBoxWidth, $script:nvmeMinGroupBoxWidth), $script:hdaRintcntMinGroupBoxWidth)
 
-$script:deviceTweakerMsiPanelWidth = 300
+$script:deviceTweakerMsiPanelWidth = 360
 $_deviceTweakerBaseGroupBoxWidth = $script:affPanelWidth + ($script:deviceTweakerMsiPanelWidth + 45)
 if ($script:deviceTweakerExtensionUiEnabled) {
     $script:affGroupBoxWidth = [Math]::Max($_deviceTweakerBaseGroupBoxWidth, $(if ($script:cppcEnabled) { 808 } else { 799 }))
@@ -42566,7 +42607,7 @@ foreach ($_buttonText in $_buttonTexts) {
 }
 $_buttonMeasuredMinFormWidth = $_buttonMinTotalWidth + 110
 $_statusMinFormWidth = [Math]::Max([Math]::Max($_legacyStatusMinFormWidth, $_statusMeasuredMinFormWidth), $_buttonMeasuredMinFormWidth)
-$script:affFormWidth = [Math]::Max($script:affGroupBoxWidth + 45, $_statusMinFormWidth)
+$script:affFormWidth = [Math]::Max(1180, [Math]::Max($script:affGroupBoxWidth + 45, $_statusMinFormWidth))
 function Limit-DeviceTweakerFormWidthToWorkingArea {
     param([Parameter(Mandatory=$true)][int]$Width, [System.Windows.Forms.Form]$Form)
     try {
@@ -43197,7 +43238,7 @@ function Ensure-DeviceEditorNativeBuildContext {
     $metrics = [DeviceEditorLayoutMetrics]::new()
     $metrics.AffGroupBoxWidth = [int]$script:affGroupBoxWidth
     $metrics.AffPanelWidth = [int]$script:affPanelWidth
-    $metrics.DeviceTweakerMsiPanelWidth = if ($script:deviceTweakerMsiPanelWidth) { [int]$script:deviceTweakerMsiPanelWidth } else { 300 }
+    $metrics.DeviceTweakerMsiPanelWidth = if ($script:deviceTweakerMsiPanelWidth) { [int]$script:deviceTweakerMsiPanelWidth } else { 360 }
     $metrics.LogicalCount = [int]$script:cachedLogicalCount
     $metrics.MaxCoresPerColumn = [int]$m.MaxCoresPerColumn
     $metrics.Columns = [int]$m.Columns
@@ -43231,6 +43272,11 @@ function Ensure-DeviceEditorNativeBuildContext {
         }
     }
     $metrics.SmtLogicalSets = [int[][]]$_smtSetsNative.ToArray()
+    $physicalIds = [int[]]::new([int]$script:cachedLogicalCount)
+    for ($cpuIndex = 0; $cpuIndex -lt $physicalIds.Length; $cpuIndex++) {
+        $physicalIds[$cpuIndex] = if ($script:PhysicalCoreIdByLogicalProcessor.ContainsKey($cpuIndex)) { [int]$script:PhysicalCoreIdByLogicalProcessor[$cpuIndex] } else { $cpuIndex }
+    }
+    [ExovanceRssTopology]::PhysicalIds = $physicalIds
 
     $script:_deviceEditorNativeTheme = $theme
     $script:_deviceEditorNativeMetrics = $metrics
@@ -45454,6 +45500,7 @@ if ($null -ne $script:__DeviceEditorBuiltControlsMap) {
 }
 $topPos = $script:_topPosUIBuild
 try { $script:deviceList = $deviceList; $script:deviceControlMap = $deviceControls } catch { }
+Set-ExovanceReadOnlyAdapterUI
 
 try {
     $reservedArr = [ReservedCpuSetsUiNative]::GetReservedCoresLocal([int]$script:cachedLogicalCount, $script:StartupModel)
@@ -45469,11 +45516,20 @@ $btnApply.Add_Click({
     $confirmApply = Show-DarkMessageBox -Message "Apply all current settings to the registry?" -Title "Confirm Apply" -Buttons YesNo -Icon Question
     if ($confirmApply -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
+    $writableDevices = @(Get-ExovanceWritableDevices -Devices $deviceList)
+    foreach ($device in $writableDevices) {
+        if ($device.Category -ne 'Network' -or $device.Role -ne 'NDIS') { continue }
+        $controls = $deviceControls[$device]
+        if ($controls.NdisIrqToggle.Checked) { continue }
+        $baseProcessor = -1
+        foreach ($cell in $controls.CheckBoxes) { if ($cell.Checked) { $baseProcessor = [int]$cell.Tag; break } }
+        $null = Get-ExovanceRssPlan -BaseProcessor $baseProcessor -QueueCount ([int]$controls.NumQueues.Value) -LogicalCount $script:cachedLogicalCount -PhysicalCoreMap $script:PhysicalCoreIdByLogicalProcessor
+    }
     $occupiedCores = [System.Collections.ArrayList]::new()
     $weakOccupiedCores = [System.Collections.ArrayList]::new()
     $logicalCount = $script:cachedLogicalCount
 
-    foreach ($device in $deviceList) {
+    foreach ($device in $writableDevices) {
         $normRoles = [System.Collections.ArrayList]::new()
         foreach ($rr in $device.Roles) {
             if (-not $rr) { continue }
@@ -45769,7 +45825,7 @@ $btnApply.Add_Click({
         Update-ConfigFile -filePath $gamesCfgPath -coresString $occupiedCoresString -weakCoresString $weakOccupiedCoresString
         Update-ConfigFile -filePath $systemCfgPath -coresString $occupiedCoresString -weakCoresString $weakOccupiedCoresString -mouseCore $mouseCore -dwmCore $dwmCore
     } else {
-        Write-Host "[Config] SecretTweak.exe not found - skipping cfg file writes" -ForegroundColor DarkYellow
+        Write-Host "[Config] Optional legacy CFG export unavailable - skipped" -ForegroundColor DarkYellow
     }
 
     Assert-ExovanceWritesSucceeded
@@ -45934,25 +45990,7 @@ function Test-AdjacentLogicalCorePair {
     return $false
 }
 
-function Test-GpuLogical8And10Override {
-    param(
-        [int]$LogicalCount,
-        [int]$PhysicalCount,
-        [bool]$HtEnabled,
-        [int[]]$AllPCores,
-        $AllSmtSets,
-        [int]$GpuCount
-    )
 
-    if ($GpuCount -le 0) { return $false }
-    if (-not $HtEnabled) { return $false }
-    if ([int]$PhysicalCount -lt 6) { return $false }
-    if ([int]$LogicalCount -le 10) { return $false }
-    if (-not (@($AllPCores) -contains 8) -or -not (@($AllPCores) -contains 10)) { return $false }
-    if (-not (Test-AdjacentLogicalCorePair -Cores @(8, 10) -SmtSets $AllSmtSets -HtEnabled $HtEnabled)) { return $false }
-
-    return $true
-}
 
 
 function Get-WeakestCoreByCPPC($coreList) {
@@ -45961,7 +45999,7 @@ function Get-WeakestCoreByCPPC($coreList) {
         $weakest = Get-DeviceTweakerCppcExtremaCore -CoreList $coreList
         if ($null -ne $weakest) { return $weakest }
     }
-    return (Get-Random -InputObject $coreList)
+    return (@(ConvertTo-DeviceTweakerFastSortedUniqueIntArray $coreList)[0])
 }
 
 function Get-BestCoreByCPPC($coreList) {
@@ -45970,7 +46008,7 @@ function Get-BestCoreByCPPC($coreList) {
         $best = Get-DeviceTweakerCppcExtremaCore -CoreList $coreList -Best
         if ($null -ne $best) { return $best }
     }
-    return (Get-Random -InputObject $coreList)
+    return (@(ConvertTo-DeviceTweakerFastSortedUniqueIntArray $coreList)[0])
 }
 
 function Find-FreeSmtSetCore([ref]$usedCoresRef, [ref]$usedSmtRef, $smtSets) {
@@ -45992,7 +46030,7 @@ function Find-FreeSmtSetCore([ref]$usedCoresRef, [ref]$usedSmtRef, $smtSets) {
             return @{ Core = $best.Core; SmtId = $best.SmtId }
         }
     }
-    $choice = Get-Random -InputObject $freeSets
+    $choice = @(ConvertTo-DeviceTweakerFastSortedByIntProperty $freeSets 'Id')[0]
     foreach ($c in $choice.Cores) {
         if (-not $usedCoresRef.Value.ContainsKey($c)) {
             return @{ Core = $c; SmtId = $choice.Id }
@@ -46056,7 +46094,7 @@ function Test-ShouldShowNdisAffinityModeDialog {
     if ($script:CLIMode) { return $false }
     if ($script:forceNetAdapterCx) { return $false }
 
-    $networkDevices = @($Devices | Where-Object { $_ -and $_.Category -eq 'Network' })
+    $networkDevices = @($Devices | Where-Object { Test-ExovanceNetworkWritable $_ })
     if ($networkDevices.Count -eq 0) { return $false }
     if ($script:forceNDIS) { return $true }
 
@@ -46070,131 +46108,57 @@ function Show-NdisAffinityModeDialog {
         [string]$InitialMode = 'RSS',
         [System.Windows.Forms.IWin32Window]$Owner = $null
     )
-
-    $selectedMode = if ([string]::IsNullOrWhiteSpace($InitialMode)) { 'RSS' } else { $InitialMode.ToUpperInvariant() }
-
-    $ndisDialogForm = [System.Windows.Forms.Form]::new()
-    $ndisDialogForm.Text = $Title
-    $ndisDialogForm.StartPosition = if ($Owner) { 'CenterParent' } else { 'CenterScreen' }
-    $ndisDialogForm.FormBorderStyle = 'FixedDialog'
-    $ndisDialogForm.MaximizeBox = $false
-    $ndisDialogForm.MinimizeBox = $false
-    $ndisDialogForm.BackColor = $script:colBlack
-    $ndisDialogForm.Font = $script:fontCache11
-    $ndisDialogForm.KeyPreview = $true
-    $ndisDialogForm.Add_KeyDown({ Invoke-DeviceTweakerCtrlCTrap -Root $ndisDialogForm -KeyEventArgs $_ })
-    $ndisDialogForm.Add_HandleCreated({ try { [DarkMode]::EnableDarkModeForWindow($this.Handle) } catch {} })
-
-    $ndisDialogLbl = [System.Windows.Forms.Label]::new()
-    $ndisDialogLbl.Text = $Prompt
-    $ndisDialogLbl.ForeColor = $script:colOrange
-    $ndisDialogLbl.BackColor = $script:colBlack
-    $ndisDialogLbl.AutoSize = $true
-    $ndisDialogLbl.MaximumSize = [System.Drawing.Size]::new(460, 0)
-    $ndisDialogLbl.Location = [System.Drawing.Point]::new(15, 20)
-    $ndisDialogLbl.Font = $script:fontCache11
-    $ndisDialogForm.Controls.Add($ndisDialogLbl)
-
-    $ndisDescText = "RSS = *RssBaseProcNumber`nIRQ Policy = AssignmentSetOverride + DevicePolicy"
-    $ndisDescLbl = [System.Windows.Forms.Label]::new()
-    $ndisDescLbl.Text = $ndisDescText
-    $ndisDescLbl.ForeColor = $script:colDimGray
-    $ndisDescLbl.BackColor = $script:colBlack
-    $ndisDescLbl.AutoSize = $true
-    $ndisDescLbl.MaximumSize = [System.Drawing.Size]::new(460, 0)
-    $ndisDescLbl.Font = $script:fontCache9
-    $ndisDialogForm.Controls.Add($ndisDescLbl)
-
-    $ndisDescTopY = 20 + $ndisDialogLbl.PreferredHeight + 8
-    $ndisDescLbl.Location = [System.Drawing.Point]::new(15, $ndisDescTopY)
-
-    $btnH = 35; $gap = 20
-    $btnFont = $script:fontCache11
-
-    $btnNdisRss = [System.Windows.Forms.Button]::new()
-    $btnNdisRss.Text = 'RSS'
-    $btnNdisRss.AutoSize = $true
-    $btnNdisRss.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowOnly
-    $btnNdisRss.MinimumSize = [System.Drawing.Size]::new(90, $btnH)
-    $btnNdisRss.FlatStyle = 'Flat'
-    $btnNdisRss.BackColor = $script:colBlack
-    $btnNdisRss.ForeColor = $script:colWhite
-    $btnNdisRss.FlatAppearance.BorderColor = $script:colOrange
-    $btnNdisRss.FlatAppearance.MouseOverBackColor = $script:colBlack
-    $btnNdisRss.Font = $btnFont
-    $btnNdisRss.Add_Click({ $script:DialogSelectedNdisAffinityMode = 'RSS'; $this.FindForm().DialogResult = [System.Windows.Forms.DialogResult]::OK; $this.FindForm().Close() })
-    $btnNdisRss.Add_MouseEnter($script:BorderToWhiteHandler)
-    $btnNdisRss.Add_MouseLeave($script:BorderToOrangeHandler)
-    $ndisDialogForm.Controls.Add($btnNdisRss)
-
-    $btnNdisIrq = [System.Windows.Forms.Button]::new()
-    $btnNdisIrq.Text = 'IRQ Policy'
-    $btnNdisIrq.AutoSize = $true
-    $btnNdisIrq.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowOnly
-    $btnNdisIrq.MinimumSize = [System.Drawing.Size]::new(90, $btnH)
-    $btnNdisIrq.FlatStyle = 'Flat'
-    $btnNdisIrq.BackColor = $script:colBlack
-    $btnNdisIrq.ForeColor = $script:colWhite
-    $btnNdisIrq.FlatAppearance.BorderColor = $script:colOrange
-    $btnNdisIrq.FlatAppearance.MouseOverBackColor = $script:colBlack
-    $btnNdisIrq.Font = $btnFont
-    $btnNdisIrq.Add_Click({ $script:DialogSelectedNdisAffinityMode = 'IRQ'; $this.FindForm().DialogResult = [System.Windows.Forms.DialogResult]::OK; $this.FindForm().Close() })
-    $btnNdisIrq.Add_MouseEnter($script:BorderToWhiteHandler)
-    $btnNdisIrq.Add_MouseLeave($script:BorderToOrangeHandler)
-    $ndisDialogForm.Controls.Add($btnNdisIrq)
-
-    $btnNdisBoth = [System.Windows.Forms.Button]::new()
-    $btnNdisBoth.Text = 'Both'
-    $btnNdisBoth.AutoSize = $true
-    $btnNdisBoth.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowOnly
-    $btnNdisBoth.MinimumSize = [System.Drawing.Size]::new(90, $btnH)
-    $btnNdisBoth.FlatStyle = 'Flat'
-    $btnNdisBoth.BackColor = $script:colBlack
-    $btnNdisBoth.ForeColor = $script:colWhite
-    $btnNdisBoth.FlatAppearance.BorderColor = $script:colOrange
-    $btnNdisBoth.FlatAppearance.MouseOverBackColor = $script:colBlack
-    $btnNdisBoth.Font = $btnFont
-    $btnNdisBoth.Add_Click({ $script:DialogSelectedNdisAffinityMode = 'BOTH'; $this.FindForm().DialogResult = [System.Windows.Forms.DialogResult]::OK; $this.FindForm().Close() })
-    $btnNdisBoth.Add_MouseEnter($script:BorderToWhiteHandler)
-    $btnNdisBoth.Add_MouseLeave($script:BorderToOrangeHandler)
-    $ndisDialogForm.Controls.Add($btnNdisBoth)
-
-    $btnRssW  = $btnNdisRss.GetPreferredSize([System.Drawing.Size]::Empty).Width;  if ($btnRssW  -lt 90) { $btnRssW  = 90 }
-    $btnIrqW  = $btnNdisIrq.GetPreferredSize([System.Drawing.Size]::Empty).Width;  if ($btnIrqW  -lt 90) { $btnIrqW  = 90 }
-    $btnBothW = $btnNdisBoth.GetPreferredSize([System.Drawing.Size]::Empty).Width; if ($btnBothW -lt 90) { $btnBothW = 90 }
-    $btnNdisRss.Size  = [System.Drawing.Size]::new($btnRssW,  $btnH)
-    $btnNdisIrq.Size  = [System.Drawing.Size]::new($btnIrqW,  $btnH)
-    $btnNdisBoth.Size = [System.Drawing.Size]::new($btnBothW, $btnH)
-
-    $totalBtnW = $btnRssW + $btnIrqW + $btnBothW + 2 * $gap
-    $contentW  = [Math]::Max($totalBtnW + 30, [Math]::Max($ndisDialogLbl.PreferredWidth + 30, $ndisDescLbl.PreferredWidth + 30))
-    $formW     = [Math]::Max(420, [Math]::Min(520, $contentW))
-
-    $btnY   = $ndisDescTopY + $ndisDescLbl.PreferredHeight + 18
-    $startX = [Math]::Floor(($formW - $totalBtnW) / 2)
-    $btnNdisRss.Location  = [System.Drawing.Point]::new($startX, $btnY)
-    $btnNdisIrq.Location  = [System.Drawing.Point]::new(($startX + $btnRssW + $gap), $btnY)
-    $btnNdisBoth.Location = [System.Drawing.Point]::new(($startX + $btnRssW + $btnIrqW + 2 * $gap), $btnY)
-
-    $formH = $btnY + $btnH + 20
-    $ndisDialogForm.ClientSize = [System.Drawing.Size]::new($formW, $formH)
-
-    switch ($selectedMode) {
-        'IRQ'  { $ndisDialogForm.ActiveControl = $btnNdisIrq }
-        'BOTH' { $ndisDialogForm.ActiveControl = $btnNdisBoth }
-        default { $ndisDialogForm.ActiveControl = $btnNdisRss }
-    }
-
-    $script:DialogSelectedNdisAffinityMode = $selectedMode
-    if ($Owner -and -not $Owner.IsDisposed) {
-        [void]$ndisDialogForm.ShowDialog($Owner)
-    } else {
-        [void]$ndisDialogForm.ShowDialog()
-    }
-
-    $result = $script:DialogSelectedNdisAffinityMode
-    $script:DialogSelectedNdisAffinityMode = $null
-    return $result
+    $dialog = [System.Windows.Forms.Form]::new()
+    try {
+        $dialog.Text = 'Exovance - ' + $Title
+        $dialog.StartPosition = if ($Owner) { 'CenterParent' } else { 'CenterScreen' }
+        $dialog.FormBorderStyle = 'FixedDialog'
+        $dialog.MaximizeBox = $false
+        $dialog.MinimizeBox = $false
+        $dialog.BackColor = $script:colBlack
+        $dialog.Font = $script:fontCache11
+        $dialog.ClientSize = [System.Drawing.Size]::new(730, 310)
+        $dialog.Add_HandleCreated({ try { [DarkMode]::EnableDarkModeForWindow($this.Handle) } catch {} })
+        $label = [System.Windows.Forms.Label]::new()
+        $label.Text = $Prompt
+        $label.ForeColor = $script:colOrange
+        $label.SetBounds(26, 24, 678, 56)
+        $dialog.Controls.Add($label)
+        $description = [System.Windows.Forms.Label]::new()
+        $description.Text = "RSS: choose processors for receive processing.`nIRQ Policy: choose processors for hardware interrupts.`nBoth: apply both settings. Performance depends on the driver and workload."
+        $description.ForeColor = $script:colLightGray
+        $description.SetBounds(26, 86, 678, 95)
+        $dialog.Controls.Add($description)
+        $modes = @('RSS','IRQ','BOTH')
+        $captions = @('RSS','IRQ Policy','Both')
+        for ($index = 0; $index -lt $modes.Count; $index++) {
+            $button = [System.Windows.Forms.Button]::new()
+            $button.Text = $captions[$index]
+            $button.Tag = $modes[$index]
+            $button.SetBounds((26 + $index * 230), 195, 218, 48)
+            $button.FlatStyle = 'Flat'
+            $button.FlatAppearance.BorderColor = $script:colOrange
+            $button.ForeColor = $script:colWhite
+            $button.Add_Click({
+                $form = $this.FindForm()
+                $form.Tag = [string]$this.Tag
+                $form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                $form.Close()
+            })
+            $dialog.Controls.Add($button)
+            if ($modes[$index] -eq $InitialMode) { $dialog.ActiveControl = $button }
+        }
+        $cancel = [System.Windows.Forms.Button]::new()
+        $cancel.Text = 'Cancel'
+        $cancel.ForeColor = $script:colWhite
+        $cancel.SetBounds(554, 260, 150, 34)
+        $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dialog.CancelButton = $cancel
+        $dialog.Controls.Add($cancel)
+        $dialog.Tag = $null
+        $result = if ($Owner) { $dialog.ShowDialog($Owner) } else { $dialog.ShowDialog() }
+        return (Resolve-ExovanceNdisMode -DialogResult ([string]$result) -SelectedMode ([string]$dialog.Tag))
+    } finally { $dialog.Dispose() }
 }
 
 $btnAutoOpt.Add_Click({
@@ -46218,6 +46182,9 @@ $btnAutoOpt.Add_Click({
             }
         }
 
+        # Keep the complete list for backup/restore; writes use verified physical adapters only.
+        $deviceList = @(Get-ExovanceWritableDevices -Devices $deviceList)
+
         $applyNdisMsi = $false
         $ndisMsiResult = Show-DarkMessageBox `
             -Message "Do you want to configure MSI settings for your network adapter?" `
@@ -46233,6 +46200,10 @@ $btnAutoOpt.Add_Click({
         if (Test-ShouldShowNdisAffinityModeDialog $deviceList) {
             $ownerForm = $this.FindForm()
             $script:autoNdisAffinityMode = Show-NdisAffinityModeDialog -Title 'Auto-Optimization - NDIS Affinity Mode' -Prompt 'How should affinity be set for the NDIS network adapter?' -InitialMode $script:autoNdisAffinityMode -Owner $ownerForm
+            if ([string]::IsNullOrWhiteSpace($script:autoNdisAffinityMode)) {
+                Set-ExovanceUiFeedback -State Ready -Text 'Cancelled - no automatic changes applied'
+                return
+            }
         } elseif ($script:CLIMode -and $script:CLINdisAffinityMode) {
             Write-Host "[CLI] Auto-Optimization NDIS affinity mode: $($script:autoNdisAffinityMode)" -ForegroundColor DarkGray
         }
@@ -46342,12 +46313,10 @@ $btnAutoOpt.Add_Click({
         }
         $hasAudioDevices = ($audioPCI.Count -gt 0) -or ($usbSingleAudio.Count -gt 0)
 
-        $specialGpuCores = @(8, 10)
-        $smtSetsAllForGpuOverride = if ($htEnabled) { Get-SmtSets -logicalCount $logicalCount -pCores $pCoreIndicesAll } else { @() }
-        $forceGpuLogical8And10 = Test-GpuLogical8And10Override -LogicalCount $logicalCount -PhysicalCount $physicalCount -HtEnabled $htEnabled -AllPCores $pCoreIndicesAll -AllSmtSets $smtSetsAllForGpuOverride -GpuCount @($gpus).Count
-        if ($forceGpuLogical8And10) {
-            AutoLog "[AutoOpt][GPU] Hard override active: GPU uses logical cores 8,10 (HT enabled, >=6 physical cores, adjacency validated, independent of CPPC/CCD device partition)." 'DarkGray'
-        }
+
+
+
+
 
         if ($script:IsDualCCDCpu -and $hasAudioDevices) {
         }
@@ -46395,13 +46364,7 @@ $btnAutoOpt.Add_Click({
         }
 
         function Find-GPUCores($pCoreIndicesParam, $smtSetsParam, $htEnabledParam, [ref]$usedCoresRef, [ref]$usedSmtSetsRef) {
-            if ($forceGpuLogical8And10) {
-                return @{
-                    Cores     = @($specialGpuCores)
-                    SmtIds    = @($specialGpuCores | ForEach-Object { Get-SmtSetIdForCore -core $_ -smtSets $smtSetsAllForGpuOverride })
-                    Hardcoded = $true
-                }
-            }
+
 
             $units = [System.Collections.ArrayList]::new()
             if ($htEnabledParam -and $smtSetsParam -and @($smtSetsParam).Count -ge 2) {
@@ -46927,7 +46890,7 @@ $btnAutoOpt.Add_Click({
                 }
             }
 
-            $availableECoresForPlan = if ($forceGpuLogical8And10) { @($eCoreIndices | Where-Object { -not ($specialGpuCores -contains [int]$_) }) } else { @($eCoreIndices) }
+            $availableECoresForPlan = @($eCoreIndices)
             $availableECoresForPlan = @(ConvertTo-DeviceTweakerFastSortedUniqueIntArray $availableECoresForPlan)
             if ($availableECoresForPlan.Count -gt 0) {
                 $ecoreCandidateSlots = [System.Collections.ArrayList]::new()
@@ -47016,7 +46979,7 @@ $btnAutoOpt.Add_Click({
             }
 
             $gpuPlan = $null
-            if ((-not $forceGpuLogical8And10) -and $gpuSlots.Count -gt 0 -and $adjacentPairs.Count -gt 0) {
+            if ($gpuSlots.Count -gt 0 -and $adjacentPairs.Count -gt 0) {
                 if ($hasSurplus -and $script:cppcEnabled) {
                     $unitsByRatingDesc = @(ConvertTo-DeviceTweakerFastSortedByIntProperty $physUnits 'Rating' -Descending)
                     $freeUnitIds = @{}
@@ -47045,14 +47008,7 @@ $btnAutoOpt.Add_Click({
 
             $gpuCoreAssignment = @()
             $gpuConsumedUnitIds = @{}
-            if ($forceGpuLogical8And10) {
-                $gpuCoreAssignment = @($specialGpuCores)
-                foreach ($gc in @($gpuCoreAssignment)) {
-                    $gpuUnit = Get-DeviceTweakerFastFirstWhere $physUnits { param($x) @($x.Cores) -contains [int]$gc }
-                    if ($gpuUnit) { $gpuConsumedUnitIds[[int]$gpuUnit.Id] = $true }
-                }
-                AutoLog "[Plan] Phase 4: GPU fixed override (>=6 physical cores + SMT ON + adjacency validated) -> logical cores [$($gpuCoreAssignment -join ', ')]" 'DarkGray'
-            } elseif ($gpuPlan) {
+            if ($gpuPlan) {
                 $gpuCoreAssignment = @($gpuPlan.Unit1.PrimaryCore, $gpuPlan.Unit2.PrimaryCore)
                 $gpuConsumedUnitIds[[int]$gpuPlan.Unit1.Id] = $true
                 $gpuConsumedUnitIds[[int]$gpuPlan.Unit2.Id] = $true
@@ -47426,12 +47382,6 @@ $btnAutoOpt.Add_Click({
 
                 if ($dev.Role -eq "NDIS") {
                     $ndisMode = $script:autoNdisAffinityMode
-                    if ($ndisMode -eq 'RSS' -or $ndisMode -eq 'BOTH') {
-                        try {
-                            Set-ItemProperty -Path $dev.RegistryPath -Name "*NumRssQueues" -Value "1" -Type String -ErrorAction Stop
-                        } catch { }
-                            # Preserve driver-managed NetAdapterCx RSS settings in IRQ-only mode.
-                    }
                     if ($ndisMode -eq 'IRQ' -or $ndisMode -eq 'BOTH') {
                         $irqPolicyPath = if ($dev.ConfigPath) { $dev.ConfigPath } else { $dev.RegistryPath }
                         Set-DevicePolicy $irqPolicyPath 4 | Out-Null
@@ -47679,7 +47629,7 @@ $btnAutoOpt.Add_Click({
         $autoOptSecretPath = Join-Path $scriptDir "SecretTweak.exe"
         if (-not (Test-Path $autoOptSecretPath)) {
             $cfgSkipped = $true
-            Write-Host "[AutoOpt] SecretTweak.exe not found - skipping cfg file writes" -ForegroundColor DarkYellow
+            Write-Host "[AutoOpt] Optional legacy CFG export unavailable - skipped" -ForegroundColor DarkYellow
         } else {
             try { Write-ConfigFileEntriesLocal -path $gamesCfgPath -coresArr $occupiedCores -weakArr $weakOccupiedCores; $cfgWriteOk1 = $true } catch { }
             try { Write-ConfigFileEntriesLocal -path $systemCfgPath -coresArr $occupiedCores -weakArr $weakOccupiedCores; $cfgWriteOk2 = $true } catch { }
@@ -47716,8 +47666,8 @@ $btnAutoOpt.Add_Click({
         Write-Host ("  Occupied Cores       : {0}" -f $occStr) -ForegroundColor Green
         Write-Host ("  Occupied Weak Cores  : {0}" -f $weakStr) -ForegroundColor Green
 
-        $cfg1Status = if ($cfgSkipped) { "Skipped (no SecretTweak.exe)" } elseif ($cfgWriteOk1) { "Written" } else { "FAILED" }
-        $cfg2Status = if ($cfgSkipped) { "Skipped (no SecretTweak.exe)" } elseif ($cfgWriteOk2) { "Written" } else { "FAILED" }
+        $cfg1Status = if ($cfgSkipped) { "Skipped (optional legacy export)" } elseif ($cfgWriteOk1) { "Written" } else { "FAILED" }
+        $cfg2Status = if ($cfgSkipped) { "Skipped (optional legacy export)" } elseif ($cfgWriteOk2) { "Written" } else { "FAILED" }
         $cfg1Color  = if ($cfgSkipped) { "DarkYellow" } elseif ($cfgWriteOk1) { "Green" } else { "Red" }
         $cfg2Color  = if ($cfgSkipped) { "DarkYellow" } elseif ($cfgWriteOk2) { "Green" } else { "Red" }
         Write-Host ("  Config: games_priorities.cfg    : {0}" -f $cfg1Status) -ForegroundColor $cfg1Color
@@ -47781,6 +47731,9 @@ $btnSecretOpt.Add_Click({
             }
         }
 
+        # Keep the complete list for backup/restore; writes use verified physical adapters only.
+        $deviceList = @(Get-ExovanceWritableDevices -Devices $deviceList)
+
         $applyNdisMsi = $false
         $ndisMsiResult = Show-DarkMessageBox `
             -Message "Do you want to configure MSI settings for your network adapter?" `
@@ -47796,6 +47749,10 @@ $btnSecretOpt.Add_Click({
         if (Test-ShouldShowNdisAffinityModeDialog $deviceList) {
             $ownerForm = $this.FindForm()
             $script:secretNdisAffinityMode = Show-NdisAffinityModeDialog -Title 'Alternate Plan - NDIS Affinity Mode' -Prompt 'How should affinity be set for the NDIS network adapter?' -InitialMode $script:secretNdisAffinityMode -Owner $ownerForm
+            if ([string]::IsNullOrWhiteSpace($script:secretNdisAffinityMode)) {
+                Set-ExovanceUiFeedback -State Ready -Text 'Cancelled - no automatic changes applied'
+                return
+            }
         } elseif ($script:CLIMode -and $script:CLINdisAffinityMode) {
             Write-Host "[CLI] Alternate Plan NDIS affinity mode: $($script:secretNdisAffinityMode)" -ForegroundColor DarkGray
         }
@@ -47980,12 +47937,10 @@ $btnSecretOpt.Add_Click({
         })
         foreach ($gdMiss in @($gpuLikeButUnmatched)) {
         }
-        $specialGpuCores = @(8, 10)
-        $smtSetsAllForGpuOverride = if ($htEnabled) { Get-SmtSets -logicalCount $logicalCount -pCores $pCoreIndicesAll } else { @() }
-        $forceGpuLogical8And10 = Test-GpuLogical8And10Override -LogicalCount $logicalCount -PhysicalCount $physicalCount -HtEnabled $htEnabled -AllPCores $pCoreIndicesAll -AllSmtSets $smtSetsAllForGpuOverride -GpuCount @($gpus).Count
-        if ($forceGpuLogical8And10) {
-            Write-Host "[SecretOpt][GPU] Hard override active: GPU uses logical cores 8,10 (HT enabled, >=6 physical cores, adjacency validated, independent of CPPC/CCD device partition)." -ForegroundColor DarkGray
-        }
+
+
+
+
         $nics = $deviceList | Where-Object { $_.Category -eq 'Network' }
         $usbs = $deviceList | Where-Object { $_.Category -eq 'USB' }
         $usbs = @(ConvertTo-DeviceTweakerFastSortedUsbDevices $usbs)
@@ -48040,13 +47995,7 @@ $btnSecretOpt.Add_Click({
         }
 
         function Find-GPUCoresSecret($pCoreIndicesParam, $smtSetsParam, $htEnabledParam, [ref]$usedCoresRef, [ref]$usedSmtSetsRef) {
-            if ($forceGpuLogical8And10) {
-                return @{
-                    Cores     = @($specialGpuCores)
-                    SmtIds    = @($specialGpuCores | ForEach-Object { Get-SmtSetIdForCore -core $_ -smtSets $smtSetsAllForGpuOverride })
-                    Hardcoded = $true
-                }
-            }
+
 
             $units = [System.Collections.ArrayList]::new()
             if ($htEnabledParam -and $smtSetsParam -and @($smtSetsParam).Count -ge 2) {
@@ -48161,7 +48110,7 @@ $btnSecretOpt.Add_Click({
                     $tries++
                 }
                 if ($assigned.Count -eq 0) {
-                    Write-Host "[SecretOpt][GPU] WARNING - couldn't assign GPU cores" -ForegroundColor Yellow
+                    Write-Host "[Exovance/Alternate][GPU] WARNING - couldn't assign GPU cores" -ForegroundColor Yellow
                     $assignedMapRef.Value[$gpu] = @()
                 } else {
                     $assignedMapRef.Value[$gpu] = $assigned
@@ -48203,7 +48152,7 @@ $btnSecretOpt.Add_Click({
                             $mask = "{0:X16}" -f ([uint64]([uint64]1 -shl $core))
                             Set-DeviceAffinity $irqTp ("0x" + $mask) | Out-Null
                         }
-                    } catch { Write-Host "[SecretOpt][NIC] NDIS write fail: $_" -ForegroundColor Yellow }
+                    } catch { Write-Host "[Exovance/Alternate][NIC] NDIS write fail: $_" -ForegroundColor Yellow }
                 } else {
                     $targetRegistryPath = Get-NetworkAdapterAffinityRegistryPath $nic
                     $mask = "{0:X16}" -f ([uint64]([uint64]1 -shl $core))
@@ -48211,7 +48160,7 @@ $btnSecretOpt.Add_Click({
                 }
                 $weakOccupiedCoresRef.Value += @($core)
             } else {
-                Write-Host "[SecretOpt][NIC] WARNING - could not allocate NIC a P-core" -ForegroundColor Yellow
+                Write-Host "[Exovance/Alternate][NIC] WARNING - could not allocate NIC a P-core" -ForegroundColor Yellow
                 $assignedMapRef.Value[$nic] = @()
             }
         }
@@ -48261,7 +48210,7 @@ $btnSecretOpt.Add_Click({
                     Set-DeviceAffinity $usb.RegistryPath ("0x" + $mask) | Out-Null
                     $weakOccupiedCoresRef.Value += @($core)
                 } else {
-                    Write-Host "[SecretOpt][USB] WARNING - could not allocate core for single-audio USB $($usb.DisplayName)" -ForegroundColor Yellow
+                    Write-Host "[Exovance/Alternate][USB] WARNING - could not allocate core for single-audio USB $($usb.DisplayName)" -ForegroundColor Yellow
                     $assignedMapRef.Value[$usb] = @()
                 }
                 return
@@ -48295,7 +48244,7 @@ $btnSecretOpt.Add_Click({
                 if ($hasMouse) { $occupiedCoresRef.Value += @($core) }
                 if ($singleKeyboard) { $weakOccupiedCoresRef.Value += @($core) }
             } else {
-                Write-Host "[SecretOpt][USB] WARNING - could not allocate P-core for USB $($usb.DisplayName)" -ForegroundColor Yellow
+                Write-Host "[Exovance/Alternate][USB] WARNING - could not allocate P-core for USB $($usb.DisplayName)" -ForegroundColor Yellow
                 $assignedMapRef.Value[$usb] = @()
             }
         }
@@ -48326,7 +48275,7 @@ $btnSecretOpt.Add_Click({
                     Set-DeviceAffinity $aud.RegistryPath ("0x" + $mask) | Out-Null
                     $weakOccupiedCoresRef.Value += @($f.Core)
                 } else {
-                    Write-Host "[SecretOpt][AudioPCI] WARNING - could not assign Audio PCI" -ForegroundColor Yellow
+                    Write-Host "[Exovance/Alternate][AudioPCI] WARNING - could not assign Audio PCI" -ForegroundColor Yellow
                     $assignedMapRef.Value[$aud] = @()
                 }
             }
@@ -48384,7 +48333,7 @@ $btnSecretOpt.Add_Click({
         }
         else {
 
-            $secretECoreIndices = if ($forceGpuLogical8And10) { @($eCoreIndices | Where-Object { -not ($specialGpuCores -contains [int]$_) }) } else { @($eCoreIndices) }
+            $secretECoreIndices = @($eCoreIndices)
             $secretECoreIndices = @(ConvertTo-DeviceTweakerFastSortedUniqueIntArray $secretECoreIndices)
 
             $secretGroupDeviceCandidates = [System.Collections.ArrayList]::new()
@@ -48445,7 +48394,7 @@ $btnSecretOpt.Add_Click({
             $gpuCoreAssignment = @()
             $gpuPreselectedUnitIds = @{}
             $gpuSelectedBeforeSecret = $false
-            if ($script:cppcEnabled -and (-not $forceGpuLogical8And10) -and @($gpus).Count -gt 0) {
+            if ($script:cppcEnabled -and @($gpus).Count -gt 0) {
                 $gpuEligibleBeforeSecret = [System.Collections.ArrayList]::new()
                 foreach ($unit in @(ConvertTo-DeviceTweakerFastSortedByIntProperty $physUnits 'Id')) {
                     if (@($unit.Cores | Where-Object { [int]$_ -eq 0 }).Count -gt 0) { continue }
@@ -48470,27 +48419,13 @@ $btnSecretOpt.Add_Click({
                     $gpuPreselectedUnitIds[[int]$gpuPairBeforeSecret.Unit1.Id] = $true
                     $gpuPreselectedUnitIds[[int]$gpuPairBeforeSecret.Unit2.Id] = $true
                     $gpuSelectedBeforeSecret = $true
-                    Write-Host ("[SecretOpt][GPU] CPPC preselected best adjacent GPU cores before Secret-group selection: {0}" -f (Format-SecretDebugList $gpuCoreAssignment)) -ForegroundColor DarkGray
+                    Write-Host ("[Exovance/Alternate][GPU] CPPC preselected best adjacent GPU cores before Secret-group selection: {0}" -f (Format-SecretDebugList $gpuCoreAssignment)) -ForegroundColor DarkGray
                 }
             }
 
-            $specialGpuUnitIds = @{}
-            if ($forceGpuLogical8And10) {
-                foreach ($gc in @($specialGpuCores)) {
-                    $gpuUnit = Get-DeviceTweakerFastFirstWhere $physUnits { param($x) @($x.Cores) -contains [int]$gc }
-                    if ($gpuUnit) { $specialGpuUnitIds[[int]$gpuUnit.Id] = $true }
-                }
-                Write-Host "[SecretOpt][GPU] >=6 physical cores + SMT ON + adjacency validated: forcing GPU to logical cores 8,10" -ForegroundColor DarkGray
-            }
-            $IsSpecialGpuUnit = {
-                param($unit)
-                if (-not $forceGpuLogical8And10 -or $null -eq $unit) { return $false }
-                if ($specialGpuUnitIds.ContainsKey([int]$unit.Id)) { return $true }
-                foreach ($c in @($unit.Cores)) {
-                    if ($specialGpuCores -contains [int]$c) { return $true }
-                }
-                return $false
-            }
+
+
+
 
             $secretGroupCoreIsECore = $false
             $secretUnit = $null
@@ -48499,7 +48434,7 @@ $btnSecretOpt.Add_Click({
                 $secretGroupCore = if ($script:cppcEnabled) { [int](Get-BestCoreByCPPC $secretGroupECoreCandidates) } else { [int](@(ConvertTo-DeviceTweakerFastSortedUniqueIntArray $secretGroupECoreCandidates)[0]) }
                 $secretGroupSmtId = $null
                 $secretGroupCoreIsECore = $true
-                Write-Host ("[SecretOpt][ECore] Secret-group core -> best eligible E-core {0}" -f $secretGroupCore) -ForegroundColor DarkGray
+                Write-Host ("[Exovance/Alternate][ECore] Secret-group core -> best eligible E-core {0}" -f $secretGroupCore) -ForegroundColor DarkGray
             } else {
                 $gpuCount = @($gpus).Count
                 $TestSecretCandidate = {
@@ -48507,13 +48442,10 @@ $btnSecretOpt.Add_Click({
                     if ($gpuCount -eq 0 -or $gpuSelectedBeforeSecret) {
                         return $true
                     }
-                    if ($forceGpuLogical8And10) {
-                        return (-not (& $IsSpecialGpuUnit $candidate))
-                    }
+
 
                     $remaining = @($physUnits | Where-Object {
                         ([int]$_.Id -ne [int]$candidate.Id) -and
-                        (-not (& $IsSpecialGpuUnit $_)) -and
                         (-not ($_.Cores | Where-Object { [int]$_ -eq 0 }))
                     })
                     $remaining = @(ConvertTo-DeviceTweakerFastSortedByIntProperty $remaining 'Id')
@@ -48534,7 +48466,7 @@ $btnSecretOpt.Add_Click({
                     return $false
                 }
 
-                $secretCandidateUnits = if ($forceGpuLogical8And10) { @($physUnits | Where-Object { -not (& $IsSpecialGpuUnit $_) }) } else { @($physUnits) }
+                $secretCandidateUnits = @($physUnits)
                 if ($gpuPreselectedUnitIds.Count -gt 0) {
                     $secretCandidateUnits = @($secretCandidateUnits | Where-Object { -not $gpuPreselectedUnitIds.ContainsKey([int]$_.Id) })
                 }
@@ -48602,7 +48534,7 @@ $btnSecretOpt.Add_Click({
                                     $irqTp = if ($sd.ConfigPath) { $sd.ConfigPath } else { $sd.RegistryPath }
                                     Set-DeviceAffinity $irqTp ("0x" + $secretMask) | Out-Null
                                 }
-                            } catch { Write-Host "[SecretOpt][NIC] NDIS write fail: $_" -ForegroundColor Yellow }
+                            } catch { Write-Host "[Exovance/Alternate][NIC] NDIS write fail: $_" -ForegroundColor Yellow }
                         } else {
                             $targetRegistryPath = Get-NetworkAdapterAffinityRegistryPath $sd
                             Set-DeviceAffinity $targetRegistryPath ("0x" + $secretMask) | Out-Null
@@ -48613,11 +48545,11 @@ $btnSecretOpt.Add_Click({
                 }
                 $occupiedCores += @($secretGroupCore)
                 if (-not $usedCores.ContainsKey([int]$secretGroupCore)) {
-                    Write-Host ("[SecretOpt][ASSERT] Secret-group core {0} was not present in usedCores immediately after Reserve-Core; forcing reservation." -f [int]$secretGroupCore) -ForegroundColor Red
+                    Write-Host ("[Exovance/Alternate][ASSERT] Secret-group core {0} was not present in usedCores immediately after Reserve-Core; forcing reservation." -f [int]$secretGroupCore) -ForegroundColor Red
                     $usedCores[[int]$secretGroupCore] = $true
                 }
                 if ($null -ne $secretGroupSmtId -and -not $usedSmtSets.ContainsKey([int]$secretGroupSmtId)) {
-                    Write-Host ("[SecretOpt][ASSERT] Secret-group SMT set {0} was not present in usedSmtSets immediately after Reserve-Core; forcing reservation." -f [int]$secretGroupSmtId) -ForegroundColor Red
+                    Write-Host ("[Exovance/Alternate][ASSERT] Secret-group SMT set {0} was not present in usedSmtSets immediately after Reserve-Core; forcing reservation." -f [int]$secretGroupSmtId) -ForegroundColor Red
                     $usedSmtSets[[int]$secretGroupSmtId] = $true
                 }
             }
@@ -48685,9 +48617,7 @@ $btnSecretOpt.Add_Click({
             }
 
             if ($null -eq $gpuCoreAssignment) { $gpuCoreAssignment = @() }
-            if ($gpuCoreAssignment.Count -lt 2 -and $forceGpuLogical8And10 -and @($gpus).Count -gt 0) {
-                $gpuCoreAssignment = @($specialGpuCores)
-            } elseif ($gpuCoreAssignment.Count -lt 2 -and @($gpus).Count -gt 0 -and $adjacentPairs.Count -gt 0) {
+            if ($gpuCoreAssignment.Count -lt 2 -and @($gpus).Count -gt 0 -and $adjacentPairs.Count -gt 0) {
                 $gpuPlan = $null
                 if ($script:cppcEnabled) {
                     $sortedPairs = @(ConvertTo-DeviceTweakerFastSortedGpuPairs $adjacentPairs -Cppc)
@@ -48719,7 +48649,7 @@ $btnSecretOpt.Add_Click({
             } elseif (@($gpus).Count -gt 0) {
             }
 
-            if ($gpuCoreAssignment.Count -ge 2 -and -not $forceGpuLogical8And10) {
+            if ($gpuCoreAssignment.Count -ge 2) {
                 $finalGpuProblems = [System.Collections.ArrayList]::new()
                 foreach ($gc in $gpuCoreAssignment) {
                     if ([int]$gc -eq 0) { Add-SecretReason $finalGpuProblems 'final GPU assignment contains logical core 0' }
@@ -48730,7 +48660,7 @@ $btnSecretOpt.Add_Click({
                     if ($null -ne $gcSmt -and $usedSmtSets.ContainsKey([int]$gcSmt)) { Add-SecretReason $finalGpuProblems ("final GPU assignment collides with reserved SMT set {0}" -f [int]$gcSmt) }
                 }
                 if ($finalGpuProblems.Count -gt 0) {
-                    Write-Host ("[SecretOpt][GPU] BLOCKED invalid GPU assignment [{0}]: {1}" -f (Format-SecretDebugList $gpuCoreAssignment), (Format-SecretReasons $finalGpuProblems)) -ForegroundColor Red
+                    Write-Host ("[Exovance/Alternate][GPU] BLOCKED invalid GPU assignment [{0}]: {1}" -f (Format-SecretDebugList $gpuCoreAssignment), (Format-SecretReasons $finalGpuProblems)) -ForegroundColor Red
                     $gpuCoreAssignment = @()
                 } else {
                 }
@@ -48744,12 +48674,12 @@ $btnSecretOpt.Add_Click({
                         $gcSmtCheck = Get-SmtSetIdForCore -core $gc -smtSets $smtSets
                         if ($null -ne $secretGroupSmtId -and $null -ne $gcSmtCheck -and [int]$gcSmtCheck -eq [int]$secretGroupSmtId) { Add-SecretReason $preWriteProblems ("pre-write collision with Secret-group SMT set {0}" -f [int]$secretGroupSmtId) }
                     }
-                    if ($preWriteProblems.Count -gt 0 -and -not $forceGpuLogical8And10) {
-                        Write-Host ("[SecretOpt][GPU][FATAL-BLOCK] Refusing to write invalid GPU cores [{0}]: {1}" -f (Format-SecretDebugList $gpuCoreAssignment), (Format-SecretReasons $preWriteProblems)) -ForegroundColor Red
+                    if ($preWriteProblems.Count -gt 0) {
+                        Write-Host ("[Exovance/Alternate][GPU][FATAL-BLOCK] Refusing to write invalid GPU cores [{0}]: {1}" -f (Format-SecretDebugList $gpuCoreAssignment), (Format-SecretReasons $preWriteProblems)) -ForegroundColor Red
                         foreach ($gpu in @($gpus)) {
                             $assignedMap[$gpu] = @()
                             $clearGpuOk = Clear-DeviceAffinity $gpu.RegistryPath
-                            Write-Host ("[SecretOpt][GPU][CLEAR-AFTER-FATAL] RegistryPath={0} result={1}" -f (Format-RegistryPathForDisplay $gpu.RegistryPath), $clearGpuOk) -ForegroundColor Red
+                            Write-Host ("[Exovance/Alternate][GPU][CLEAR-AFTER-FATAL] RegistryPath={0} result={1}" -f (Format-RegistryPathForDisplay $gpu.RegistryPath), $clearGpuOk) -ForegroundColor Red
                         }
                     } else {
                     foreach ($gpu in @($gpus)) {
@@ -48758,7 +48688,7 @@ $btnSecretOpt.Add_Click({
                         foreach ($c in $gpuCoreAssignment) { $maskInt = $maskInt -bor ([uint64]1 -shl $c) }
                         $hexMask = "{0:X16}" -f $maskInt
                         $setGpuOk = Set-DeviceAffinity $gpu.RegistryPath ("0x" + $hexMask)
-                        if (-not $setGpuOk) { Write-Host "[SecretOpt][GPU][WRITE] ERROR: Set-DeviceAffinity returned false; registry may still show an old/stale GPU affinity." -ForegroundColor Red }
+                        if (-not $setGpuOk) { Write-Host "[Exovance/Alternate][GPU][WRITE] ERROR: Set-DeviceAffinity returned false; registry may still show an old/stale GPU affinity." -ForegroundColor Red }
                         $occupiedCores += $gpuCoreAssignment
                         foreach ($c in $gpuCoreAssignment) {
                             $usedCores[[int]$c] = $true
@@ -48768,11 +48698,11 @@ $btnSecretOpt.Add_Click({
                     }
                     }
                 } else {
-                    Write-Host "[SecretOpt][GPU] WARNING - no valid adjacent GPU pair found; clearing stale GPU affinity so old masks cannot masquerade as new Secret-Opt output." -ForegroundColor Yellow
+                    Write-Host "[Exovance/Alternate][GPU] WARNING - no valid adjacent GPU pair found; clearing stale GPU affinity so old masks cannot masquerade as new Secret-Opt output." -ForegroundColor Yellow
                     foreach ($gpu in @($gpus)) {
                         $assignedMap[$gpu] = @()
                         $clearGpuOk = Clear-DeviceAffinity $gpu.RegistryPath
-                        Write-Host ("[SecretOpt][GPU][CLEAR] RegistryPath={0} result={1}" -f (Format-RegistryPathForDisplay $gpu.RegistryPath), $clearGpuOk) -ForegroundColor Yellow
+                        Write-Host ("[Exovance/Alternate][GPU][CLEAR] RegistryPath={0} result={1}" -f (Format-RegistryPathForDisplay $gpu.RegistryPath), $clearGpuOk) -ForegroundColor Yellow
                     }
                 }
             }
@@ -48793,10 +48723,6 @@ $btnSecretOpt.Add_Click({
             if ($dev.Category -eq "Network") {
                 if ($dev.Role -eq "NDIS") {
                     $ndisMode = $script:secretNdisAffinityMode
-                    if ($ndisMode -eq 'RSS' -or $ndisMode -eq 'BOTH') {
-                        try { Set-ItemProperty -Path $dev.RegistryPath -Name "*NumRssQueues" -Value "1" -Type String -ErrorAction Stop } catch { }
-                            # Preserve driver-managed NetAdapterCx RSS settings in IRQ-only mode.
-                    }
                     if ($ndisMode -eq 'IRQ' -or $ndisMode -eq 'BOTH') {
                         $irqPolicyPath = if ($dev.ConfigPath) { $dev.ConfigPath } else { $dev.RegistryPath }
                         Set-DevicePolicy $irqPolicyPath 4 | Out-Null
@@ -48828,7 +48754,7 @@ $btnSecretOpt.Add_Click({
         if (@($gpus).Count -eq 0) {
             $gpuVisibleInDeviceList = @($deviceList | Where-Object { ([string]$_.DisplayName -match '(?i)(GPU|NVIDIA|GeForce|RTX|GTX|Radeon|Arc)') -or ([string]$_.DeviceDesc -match '(?i)(GPU|NVIDIA|GeForce|RTX|GTX|Radeon|Arc)') })
             if (@($gpuVisibleInDeviceList).Count -gt 0) {
-                Write-Host ("[SecretOpt][GPU][FATAL-DISCOVERY] Device-assignment list contains GPU-like device(s), but `$gpus is empty. GPU affinity write would be skipped and stale registry affinity may be printed." ) -ForegroundColor Red
+                Write-Host ("[Exovance/Alternate][GPU][FATAL-DISCOVERY] Device-assignment list contains GPU-like device(s), but `$gpus is empty. GPU affinity write would be skipped and stale registry affinity may be printed." ) -ForegroundColor Red
             }
         }
 
@@ -48968,7 +48894,7 @@ $btnSecretOpt.Add_Click({
         $secretExePath = Join-Path $scriptDir "SecretTweak.exe"
         if (-not (Test-Path $secretExePath)) {
             $cfgSkipped = $true
-            Write-Host "[SecretOpt] SecretTweak.exe not found - skipping cfg file writes" -ForegroundColor DarkYellow
+            Write-Host "[Exovance/Alternate] Optional legacy CFG export unavailable - skipped" -ForegroundColor DarkYellow
         } else {
             try { Write-ConfigFileEntriesLocal -path $gamesCfgPath -coresArr $occupiedCores -weakArr $weakOccupiedCores; $cfgWriteOk1 = $true } catch { }
             try { Write-ConfigFileEntriesLocal -path $systemCfgPath -coresArr $occupiedCores -weakArr $weakOccupiedCores; $cfgWriteOk2 = $true } catch { }
@@ -49013,8 +48939,8 @@ $btnSecretOpt.Add_Click({
             Write-Host ("  ReservedCpuSets      : Unchanged") -ForegroundColor DarkGray
         }
 
-        $cfg1Status = if ($cfgSkipped) { "Skipped (no SecretTweak.exe)" } elseif ($cfgWriteOk1) { "Written" } else { "FAILED" }
-        $cfg2Status = if ($cfgSkipped) { "Skipped (no SecretTweak.exe)" } elseif ($cfgWriteOk2) { "Written" } else { "FAILED" }
+        $cfg1Status = if ($cfgSkipped) { "Skipped (optional legacy export)" } elseif ($cfgWriteOk1) { "Written" } else { "FAILED" }
+        $cfg2Status = if ($cfgSkipped) { "Skipped (optional legacy export)" } elseif ($cfgWriteOk2) { "Written" } else { "FAILED" }
         $cfg1Color  = if ($cfgSkipped) { "DarkYellow" } elseif ($cfgWriteOk1) { "Green" } else { "Red" }
         $cfg2Color  = if ($cfgSkipped) { "DarkYellow" } elseif ($cfgWriteOk2) { "Green" } else { "Red" }
         Write-Host ("  Config: games_priorities.cfg    : {0}" -f $cfg1Status) -ForegroundColor $cfg1Color
@@ -49033,7 +48959,7 @@ $btnSecretOpt.Add_Click({
         Show-DarkMessageBox -Message "Alternate plan finished. A system restart may be required." -Title "Alternate Plan" -Icon Information
     }
     catch {
-        Write-Host "[SecretOpt] Error: $_" -ForegroundColor Red
+        Write-Host "[Exovance/Alternate] Error: $_" -ForegroundColor Red
         Set-ExovanceUiFeedback -State Error -Text 'Action incomplete - review error details'
         Show-DarkMessageBox -Message "Alternate plan failed: $_" -Title "Error" -Icon Error
     }

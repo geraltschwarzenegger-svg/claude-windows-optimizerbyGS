@@ -1,4 +1,4 @@
-# Theme/feedback checks run without starting WinForms or touching the registry.
+﻿# Theme/feedback checks run without starting WinForms or touching the registry.
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $folder=Join-Path $repo 'DEVICE-TWEAKER-V2'
@@ -48,6 +48,37 @@ Test-Case 'custom CPU grid retains keyboard selection and settings remain owned 
     $selection=$source.Substring($a,$b-$a)
     Assert-True (-not ($selection -match 'Registry|Set-Device|SetValue')) 'Selection event applies settings.'
     Assert-True ($source.Contains('if ($script:ExovanceUiState -eq ''Working'')')) 'Cancellation cannot return to ready.'
+}
+Test-Case 'native RSS preview matches backend on SMT, heterogeneous maps and high CPUs' {
+    $match=[regex]::Match($source,'(?s)public static class ExovanceRssTopology\s*\{.*?\n\}')
+    Assert-True $match.Success 'Native RSS planner missing.'
+    Add-Type -TypeDefinition ("using System.Collections.Generic;`n"+$match.Value)
+    foreach($ids in @(
+        [int[]]@(0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7),
+        [int[]]@(0,0,1,2,2,3,4,4),
+        [int[]]@(0..63)
+    )) {
+        [ExovanceRssTopology]::PhysicalIds=[int[]]$ids
+        $map=@{}
+        for($i=0;$i -lt $ids.Length;$i++){$map[$i]=[int]$ids[$i]}
+        for($base=0;$base -lt $ids.Length;$base++) {
+            foreach($queues in @(1,2,4,$ids.Length)) {
+                $expected=$null
+                try {$expected=Get-ExovanceRssPlan $base $queues $ids.Length $map} catch {}
+                $actual=[ExovanceRssTopology]::GetProcessors($base,$queues,$ids.Length)
+                $mask=[ExovanceRssTopology]::GetMask($base,$queues,$ids.Length)
+                if($null -eq $expected) {
+                    Assert-True ($actual.Count -eq 0 -and $mask -eq 0) 'Preview wrapped an impossible RSS range.'
+                } else {
+                    Assert-True (($actual -join ',') -eq ($expected.Processors -join ',')) 'Preview and backend disagree on processors.'
+                    Assert-True ($mask -eq (ConvertTo-ExovanceAffinityMask $expected.Processors)) 'Preview mask differs from selected processors.'
+                }
+            }
+        }
+    }
+    [ExovanceRssTopology]::PhysicalIds=[int[]]@(0,0,1,2,2,3,4,4)
+    Assert-True (([ExovanceRssTopology]::GetProcessors(1,3,8) -join ',') -eq '1,2,3') 'Golden heterogeneous case failed.'
+    Assert-True ([ExovanceRssTopology]::GetMask(7,2,8) -eq 0) 'Overflow wraps to CPU zero.'
 }
 Write-Host ('Exovance UI checks: {0} passed. No window or hardware settings were started.' -f $script:Passed)
 exit 0

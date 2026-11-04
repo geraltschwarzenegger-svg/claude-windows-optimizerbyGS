@@ -1,4 +1,4 @@
-# Run with Windows PowerShell 5.1 or PowerShell 7. No external modules required.
+﻿# Run with Windows PowerShell 5.1 or PowerShell 7. No external modules required.
 # Only the /check branch may execute in a child process. Never dot-source the app.
 $ErrorActionPreference = 'Stop'
 $script:Passed = 0
@@ -95,7 +95,28 @@ function New-ResourceFixtureFile {
     [IO.File]::WriteAllText($Path, 'fixture only')
 }
 
-foreach ($resource in @('DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat', 'POWER-PLAN\LLC-CERTIFIED.pow')) {
+Test-Case 'power plan gets the Exovance name even if already active; rename failure is reported' {
+    $fn=$asts.v2.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Enable-LlcCertifiedPowerPlan'},$true)
+    . ([scriptblock]::Create($fn.Extent.Text))
+    $guid='8b24b027-1dee-4c65-8f35-5d5d91e51d87'
+    function Test-PowerSchemeExists { param($SchemeGuid) return $true }
+    function Get-ActivePowerSchemeGuid { return $guid }
+    function Convert-NativeCommandOutputToText { param($Output) return [string]$Output }
+    function Write-StatusLine { param($Ok,$Text) }
+    function Invoke-NativeCommandCaptured {
+        param($FilePath,$ArgumentList)
+        Assert-True ($FilePath -eq 'powercfg.exe' -and ($ArgumentList -join '|') -eq ('/changename|'+$guid+'|Exovance v2')) 'Unexpected power operation.'
+        $script:RenameCalls++
+        return [pscustomobject]@{ExitCode=$script:RenameExit;Output='fixture'}
+    }
+    $script:RenameCalls=0; $script:RenameExit=0
+    Assert-True (Enable-LlcCertifiedPowerPlan 'unused.pow' $guid) 'Existing active plan failed.'
+    Assert-True ($script:RenameCalls -eq 1) 'Already-active plan retained old name.'
+    $script:RenameExit=5
+    Assert-True (-not (Enable-LlcCertifiedPowerPlan 'unused.pow' $guid)) 'Rename failure reported success.'
+}
+
+foreach ($resource in @('DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat', 'POWER-PLAN\EXOVANCE.pow')) {
     foreach ($separator in @('\', '/')) {
         $relative = ('Resources\' + $resource).Replace('\', $separator)
         Test-Case ('resource resolver finds bundled {0} with separator [{1}]' -f $resource, $separator) {
@@ -235,6 +256,8 @@ Test-Case 'bundled NvidiaV2 XML decodes with its declared encoding and retains R
     Assert-True ($settings.Count -eq 43) 'User profile settings were lost.'
     $ids = @($settings | ForEach-Object { $_.SettingID })
     Assert-True (@($ids | Select-Object -Unique).Count -eq 43) 'Duplicate driver setting IDs.'
+    $brand = @($settings | Where-Object { $_.SettingID -eq '538751439' })
+    Assert-True ($brand.Count -eq 1 -and $brand[0].SettingValue -eq 'EXOVANCE' -and $brand[0].ValueType -eq 'String') 'Exovance profile metadata missing.'
     $rebar = @($settings | Where-Object { $_.SettingID -eq '784929' })
     Assert-True ($rebar.Count -eq 1 -and $rebar[0].SettingValue -eq '2' -and $rebar[0].ValueType -eq 'Dword') 'ReBAR Enable v2 must stay Enabled.'
     $size = @($settings | Where-Object { $_.SettingID -eq '983295' })

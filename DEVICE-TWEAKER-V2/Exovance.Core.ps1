@@ -1,5 +1,40 @@
 # Exovance Device Tweaker v2: testable affinity, RSS and registry support.
 # Loading this file defines functions only; it never applies settings.
+function Test-ExovanceNetworkWritable {
+    param($Device)
+    if ($null -eq $Device -or $Device.Category -ne 'Network') { return $false }
+    # Names and the NDIS/NetAdapterCx driver model do not establish physicality.
+    # IRQ/MSI editing currently supports physical PCI/PCIe adapters only.
+    foreach ($flag in @('Virtual','SoftwareInterface')) {
+        if ($Device.$flag -eq $true) { return $false }
+    }
+    foreach ($flag in @('HardwareInterface','PhysicalAdapter')) {
+        if ($null -ne $Device.$flag -and $Device.$flag -eq $false) { return $false }
+    }
+    $physical = $false
+    foreach ($field in @('PNPID','ConfigPath','RegistryPath')) {
+        $path = [string]$Device.$field
+        if ($path -match '(?i)(?:^|\\Enum\\)(?:SWD|ROOT|VMBUS|USB|BTH)\\') { return $false }
+        if ($path -match '(?i)(?:^|\\Enum\\)PCI\\VEN_[0-9A-F]{4}&DEV_[0-9A-F]{4}(?:&|\\|$)') { $physical = $true }
+    }
+    return $physical
+}
+
+function Get-ExovanceWritableDevices {
+    param([System.Collections.IEnumerable]$Devices)
+    foreach ($device in $Devices) {
+        if ($null -eq $device) { continue }
+        if ($device.Category -ne 'Network' -or (Test-ExovanceNetworkWritable $device)) { $device }
+        else { Write-Host ('[Exovance] Read only: {0} (virtual, non-PCI or unverified network adapter; no IRQ/MSI/RSS writes).' -f $device.DisplayName) -ForegroundColor DarkYellow }
+    }
+}
+
+function Resolve-ExovanceNdisMode {
+    param([string]$DialogResult, [string]$SelectedMode)
+    if ($DialogResult -eq 'OK' -and @('RSS','IRQ','BOTH') -contains $SelectedMode) { return $SelectedMode.ToUpperInvariant() }
+    return $null
+}
+
 function ConvertTo-ExovanceAffinityMask {
     param([int[]]$Processors)
     [uint64]$mask = 0
