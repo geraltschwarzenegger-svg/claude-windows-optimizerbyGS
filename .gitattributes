@@ -4,3 +4,8 @@ Low-Latency-Corp-Menu_v2.cmd -text whitespace=cr-at-eol
 
 # Preserve the standalone Windows launcher CRLF bytes.
 DEVICE-TWEAKER-V2/RUN-EXOVANCE-V2.bat -text whitespace=cr-at-eol
+
+# Integrity manifests compare distributed bytes on both Linux and Windows.
+DEVICE-TWEAKER/DEVICE-TWEAKER-UPDATE-2026-LLG-X-LLC-UPDATED.ps1 -text
+DEVICE-TWEAKER-V2/** -text
+Resources/NVIDIA-PROFILE-INSPECTOR/** -text

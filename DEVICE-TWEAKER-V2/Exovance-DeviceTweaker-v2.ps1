@@ -6638,7 +6638,7 @@ public sealed class OrangeCheckBox : CheckBox
         using (GraphicsPath path = ExovanceVisuals.Round(rect, 5))
         using (SolidBrush brush = new SolidBrush(fill)) { g.FillPath(brush, path); }
         int y = Math.Max(2, (Height - 10) / 2);
-        using (Pen edge = new Pen(active ? ExovancePalette.Accent : ExovancePalette.Border)) { g.DrawRectangle(edge, 3, y, 10, 10); }
+        using (Pen edge = new Pen(active ? ExovancePalette.Accent : ExovancePalette.Muted)) { g.DrawRectangle(edge, 3, y, 10, 10); }
         if (Checked) {
             using (Pen check = new Pen(Enabled ? ExovancePalette.Accent : ExovancePalette.Muted, 1.5f)) {
                 g.DrawLines(check, new PointF[] { new PointF(4, y+5), new PointF(7, y+8), new PointF(12, y+2) });
@@ -16446,7 +16446,7 @@ public sealed class CpuAffinityGrid : Control
             }
         }
         else {
-            using (Pen box = new Pen(ExovancePalette.Border)) { g.DrawRectangle(box, x, y, 8, 8); }
+            using (Pen box = new Pen(ExovancePalette.Muted)) { g.DrawRectangle(box, x, y, 8, 8); }
         }
         Color textColor = selected ? ExovancePalette.Accent : PCoreColor;
         if (!selected && _isPCore != null && index < _isPCore.Length && !_isPCore[index]) { textColor = ECoreColor; }
