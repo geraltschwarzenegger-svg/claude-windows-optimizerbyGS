@@ -343,10 +343,12 @@ Test-Case 'demo snapshot child runs without admin or transcript and matches the 
     $scriptPath = Join-Path $tmpDir 'payload.ps1'
     $logPath = Join-Path $tmpDir 'must-not-exist.log'
     $oldDemo = $env:LLC_MENU_DEMO; $oldSnapshot = $env:LLC_MENU_SNAPSHOT; $oldLog = $env:LLC_MENU_DEBUG_LOG
+    $oldConsoleEncoding = [Console]::OutputEncoding
     try {
         [IO.File]::WriteAllText($scriptPath, $payload, (New-Object Text.UTF8Encoding($true)))
         $env:LLC_MENU_DEMO='1'; $env:LLC_MENU_SNAPSHOT='1'; $env:LLC_MENU_DEBUG_LOG=$logPath
         $engine = (Get-Process -Id $PID).Path
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         $output = @(& $engine -NoLogo -NoProfile -File $scriptPath 2>&1)
         Assert-True ($LASTEXITCODE -eq 0) ('Demo child failed: ' + ($output -join "`n"))
         $items = @(Get-LlcMainMenuItems -GpuText 'GPU - demo adapter' -DriverText 'Drivers - demo adapter' -MmcssText 'MMCSS - demo stack')
@@ -356,6 +358,7 @@ Test-Case 'demo snapshot child runs without admin or transcript and matches the 
         Assert-True (-not (Test-Path -LiteralPath $logPath)) 'Demo started backend transcript.'
     } finally {
         $env:LLC_MENU_DEMO=$oldDemo; $env:LLC_MENU_SNAPSHOT=$oldSnapshot; $env:LLC_MENU_DEBUG_LOG=$oldLog
+        [Console]::OutputEncoding = $oldConsoleEncoding
         Remove-Item -LiteralPath $tmpDir -Recurse -Force
     }
 }
@@ -365,11 +368,13 @@ Test-Case 'interactive demo with redirected output fails clearly without initial
     $scriptPath = Join-Path $tmpDir 'payload.ps1'
     $logPath = Join-Path $tmpDir 'must-not-exist.log'
     $oldDemo = $env:LLC_MENU_DEMO; $oldSnapshot = $env:LLC_MENU_SNAPSHOT; $oldLog = $env:LLC_MENU_DEBUG_LOG
+    $oldConsoleEncoding = [Console]::OutputEncoding
     try {
         [IO.File]::WriteAllText($scriptPath, $payload, (New-Object Text.UTF8Encoding($true)))
         $env:LLC_MENU_DEMO='1'; $env:LLC_MENU_SNAPSHOT=$null; $env:LLC_MENU_DEBUG_LOG=$logPath
         $engine = (Get-Process -Id $PID).Path
         # Capturing output deliberately removes the interactive output terminal.
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         $output = @(& $engine -NoLogo -NoProfile -File $scriptPath 2>&1)
         $actualExit = $LASTEXITCODE
         $text = $output -join "`n"
@@ -379,12 +384,18 @@ Test-Case 'interactive demo with redirected output fails clearly without initial
         Assert-True (-not (Test-Path -LiteralPath $logPath)) 'Failed preview started backend transcript.'
     } finally {
         $env:LLC_MENU_DEMO=$oldDemo; $env:LLC_MENU_SNAPSHOT=$oldSnapshot; $env:LLC_MENU_DEBUG_LOG=$oldLog
+        [Console]::OutputEncoding = $oldConsoleEncoding
         Remove-Item -LiteralPath $tmpDir -Recurse -Force
     }
 }
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     Test-Case 'CMD /demo /snapshot launches the isolated UI on Windows' {
-        $output = @(& $env:ComSpec /d /c ('""{0}" /demo /snapshot"' -f $cmdPath) 2>&1)
+        $oldConsoleEncoding = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+            $output = @(& $env:ComSpec /d /c ('""{0}" /demo /snapshot"' -f $cmdPath) 2>&1)
+        } finally { [Console]::OutputEncoding = $oldConsoleEncoding }
+        Assert-True (($output -join "`n").Contains('Совет:')) 'CMD launcher corrupted Russian help text.'
         Assert-True ($LASTEXITCODE -eq 0) 'Windows CMD demo failed.'
         Assert-True (($output -join "`n").Contains('UI PREVIEW - no system changes')) 'CMD demo did not produce the UI.'
         Assert-True ($output.Count -le 29) 'CMD demo exceeded viewport height.'

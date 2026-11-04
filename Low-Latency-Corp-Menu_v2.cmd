@@ -910,6 +910,7 @@ function Get-LlcMainMenuItems {
 if ($env:LLC_MENU_DEMO -eq '1') {
     $demoItems = @(Get-LlcMainMenuItems -GpuText 'GPU - demo adapter' -DriverText 'Drivers - demo adapter' -MmcssText 'MMCSS - demo stack')
     if ($env:LLC_MENU_SNAPSHOT -eq '1') {
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         $demoFrame = Get-LlcMenuFrame -Title 'UI PREVIEW - no system changes' -Items $demoItems -SelectedIndex 0 -Width 80 -Height 30
         [Console]::WriteLine(($demoFrame.Lines -join [Environment]::NewLine))
     } else {
