@@ -40,7 +40,7 @@ set "THIS=%~f0"
 set "PSPAYLOAD=%TEMP%\Windows_Tweaks_Menu_%RANDOM%_%RANDOM%.ps1"
 set "LLC_MENU_DEBUG_LOG=%TEMP%\ExovanceMenu_Debug_%RANDOM%_%RANDOM%.log"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $src=$env:THIS; $out=$env:PSPAYLOAD; $marker='### POWERSHELL STARTS HERE ###'; $lines=Get-Content -LiteralPath $src; $i=[Array]::IndexOf($lines,$marker); if($i -lt 0){ throw 'PowerShell payload marker not found.' }; $lines[($i+1)..($lines.Count-1)] | Set-Content -LiteralPath $out -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $src=$env:THIS; $out=$env:PSPAYLOAD; $marker='### POWERSHELL STARTS HERE ###'; $lines=Get-Content -LiteralPath $src -Encoding UTF8; $i=[Array]::IndexOf($lines,$marker); if($i -lt 0){ throw 'PowerShell payload marker not found.' }; $lines[($i+1)..($lines.Count-1)] | Set-Content -LiteralPath $out -Encoding UTF8"
 if errorlevel 1 (
     echo.
     echo FAILED: Could not extract PowerShell payload from this CMD file.
@@ -243,6 +243,426 @@ function Get-LlcMenuValue {
     return $entry[0].Value
 }
 
+# Read-only contextual help. Metadata never invokes a tweak or reads the registry.
+function Split-LlcMenuHelpText {
+    param([AllowNull()][string]$Text, [int]$Width)
+    if ($Width -lt 1) { return }
+    foreach ($paragraph in (([string]$Text) -split '\r?\n')) {
+        $remaining = $paragraph -replace '[\x00-\x1f\x7f-\x9f]', ' '
+        if ($remaining.Length -eq 0) { ''; continue }
+        while ($remaining.Length -gt 0) {
+            $part = Format-LlcMenuText -Text $remaining -Width $Width
+            if ($part.Length -eq 0) { break }
+            if ($remaining.Length -gt $part.Length) {
+                $space = $part.LastIndexOf(' ')
+                if ($space -ge [Math]::Max(1, [int]($Width / 3))) {
+                    $remaining = $remaining.Substring($space + 1)
+                    $part.Substring(0, $space)
+                    continue
+                }
+            }
+            $remaining = $remaining.Substring($part.Length)
+            $part
+        }
+    }
+}
+
+function Get-LlcRegistryHelpLines {
+    param([string[]]$VariableNames)
+    foreach ($variableName in $VariableNames) {
+        $variable = Get-Variable -Name $variableName -ErrorAction SilentlyContinue
+        if ($null -eq $variable) { continue }
+        foreach ($item in $variable.Value) {
+            if ($null -eq $item) { continue }
+            if ($item -is [string]) {
+                # Services use a list of service names instead of registry records.
+                if ($variableName -eq 'servicesToDisable') { 'HKLM\SYSTEM\CurrentControlSet\Services\{0} | Start = 4 (DWORD)' -f $item }
+                continue
+            }
+            if ($item.PSObject.Properties['Key'] -and $item.PSObject.Properties['Name']) {
+                $kind = if ($item.PSObject.Properties['Type']) { [string]$item.Type } else { 'DWord' }
+                $value = if ($kind -eq 'Delete') { 'удалить параметр' } else { [string]$item.Value }
+                '{0} | {1} = {2} ({3})' -f $item.Key, $item.Name, $value, $kind
+            }
+        }
+    }
+}
+
+function Get-LlcMenuHelp {
+    param([string]$Title, [Parameter(Mandatory=$true)][object]$Entry)
+    $text = [string]$Entry.Text
+    $value = [string]$Entry.Value
+    $topic = ''
+    $sources = @()
+    $summary = 'Выбранный пункт меню.'
+    $effect = 'Enter откроет пункт или выполнит указанное действие.'
+    $where = 'Место изменения зависит от выбранного действия.'
+    $advice = 'Сначала прочитай описание действия. F1 открывает полную справку.'
+    $details = @()
+    $dispatch = @('preflight','autoRegistryTweaks','uac','qol','fullscreenOptimization','gamebarAndGameMode','services','powersaving','networkOptimization','mmcss','win32PrioritySeparation','clockInterrupts','hags','gpu','drivers','apps','autostart','powerPlan','activateWindows','exit')
+    if ($value -in $dispatch) { $topic = $value }
+    else {
+        switch -Regex ($Title) {
+            '^MMCSS - Auto adapter choice$' { $topic='adapterChoice'; break }
+            '^GPU - Auto vendor choice$' { $topic='vendorChoice'; break }
+            '^QOL - Search Taskbar Mode$' { $topic='searchTaskbar'; break }
+            '^Fullscreen Optimization$' { $topic='fullscreenOptimization'; break }
+            '^Gamebar and Game Mode$' { $topic='gamebarAndGameMode'; break }
+            '^Hardware-Accelerated GPU Scheduling$' { $topic='hags'; break }
+            '^UAC$' { $topic='uac'; break }
+            '^QOL$' { $topic='qol'; break }
+            '^Services$' { $topic='services'; break }
+            '^Powersaving$' { $topic='powersaving'; break }
+            '^Network Optimization$' { $topic='networkOptimization'; break }
+            '^MMCSS(?:\s*-|$)' { $topic='mmcss'; break }
+            '^Win32PrioritySeparation$' { $topic='win32PrioritySeparation'; break }
+            '^Clock Interrupts$' { $topic='clockInterrupts'; break }
+            '^Power Plan$' { $topic='powerPlan'; break }
+            '^Activate Windows$' { $topic='activateWindows'; break }
+            '^Exovance Device Tweaker' { $topic='deviceTweaker'; break }
+            '^NVIDIA Profile Inspector' { $topic='nvpi'; break }
+            '^(NIC|Reaaltek|Intel|NDIS|NetAdapterCx)$' { $topic='nicDrivers'; break }
+            '^(Drivers|Install driver|Download.*Driver|NvCleanstall|Radeon Software Slimmer|Display Driver Uninstaller)$' { $topic='drivers'; break }
+            '^(GPU|NVIDIA|AMD)(?:\s*-|$)' { $topic='gpu'; break }
+            '^Apps$' { $topic='apps'; break }
+            '^Windows Defender Switcher$' { $topic='defender'; break }
+            '^Windows Update Blocker$' { $topic='updates'; break }
+            '^HIDUSBF$' { $topic='hidusbf'; break }
+            '^(7-Zip|Chrome|Power Scheme Manager|PresentMon CSV Plotter)$' { $topic='external'; break }
+        }
+        switch -Regex ($text) {
+            '^(Optimize|Revert) NVIDIA GPU' { $topic='nvidiaPreset'; break }
+            '^(Optimize|Revert) AMD GPU' { $topic='amdPreset'; break }
+            '^Exovance Device Tweaker' { $topic='deviceTweaker'; break }
+            '^NVIDIA Profile Inspector' { $topic='nvpi'; break }
+            '^Windows Defender Switcher' { $topic='defender'; break }
+            '^Windows Update Blocker' { $topic='updates'; break }
+            '^HIDUSBF$' { $topic='hidusbf'; break }
+            '^(7-Zip|Chrome|Power Scheme Manager|PresentMon CSV Plotter)$' { $topic='external'; break }
+        }
+    }
+    switch ($topic) {
+        'preflight' {
+            $summary='Проверка запуска: версия PowerShell, разрядность и наличие файлов.'
+            $effect='Откроет отчёт. Настройки системы не применяются.'
+            $where='Реестр не изменяется.'
+            $advice='Начни с этого пункта после распаковки программы.'
+        }
+        'autoRegistryTweaks' {
+            $summary='Общий пресет: UAC, службы, QOL, сеть, GPU, питание и другие настройки.'
+            $effect='После ввода AUTO применяет весь набор, включая отключение UAC и OneDrive.'
+            $where='Несколько веток HKLM, HKCU и профилей HKU; также powercfg и другие действия.'
+            $advice='Сначала изучи отдельные разделы и подготовь backup: полного общего отката нет.'
+            $sources=@('uacDisable','hagsEnable','fsoDisable','gameBarDisable','gameModeDisable','servicesToDisable','win32PrioritySeparation18Hex','clockInterruptsCore0')
+            $details=@('Это широкий пресет, а не автоматическое определение лучших настроек для твоего ПК.','В текущем Auto: HAGS включается, FSO/Game Bar/Game Mode и UAC отключаются. Рекомендации отдельных разделов не меняют этот готовый пресет.','Ниже перечислена фиксированная часть записей. QOL, питание, динамический выбор MMCSS/GPU и внешний профиль NVIDIA описаны в своих разделах.','Открытие справки и перемещение по меню не запускают Auto. Подтверждение AUTO остаётся отдельным шагом.')
+        }
+        'adapterChoice' {
+            $summary='Уточнение сетевого адаптера и его стека NDIS / NetAdapterCx для Auto.'
+            $effect='Выбранный адаптер определит следующую ветку MMCSS в уже запущенном Auto.'
+            $where='Далее применяются параметры MMCSS/SystemProfile; выбор не является отдельной настройкой RSS.'
+            $advice='Выбери физический адаптер, через который идёт игра. Сама справка ничего не применяет.'
+        }
+        'vendorChoice' {
+            $summary='Уточнение производителя видеокарты для автоматического пресета.'
+            $effect='Выбор определяет пресет NVIDIA/AMD; затем продолжается уже запущенный Auto.'
+            $where='Пресет класса дисплея в HKLM; импорт профиля NVIDIA выполняется отдельным шагом Auto.'
+            $advice='Выбирай фактического производителя нужной GPU. Если не уверен — отмени выбор.'
+        }
+        'searchTaskbar' {
+            $summary='Внешний вид поиска на панели задач в составе QOL.'
+            $effect='Выбор задаёт вид поиска; остальные шаги QOL сохраняются.'
+            $where='HKCU/HKU\Software\Microsoft\Windows\CurrentVersion\Search | SearchboxTaskbarMode'
+            $advice='Выбирай удобный вид: это настройка интерфейса, а не ускорение игр.'
+            $details=@('Значения SearchboxTaskbarMode: 0=скрыть, 1=значок, 2=поле поиска. Вид зависит от версии Windows.')
+        }
+        'uac' {
+            $summary='UAC запрашивает подтверждение повышения прав администратора.'
+            $effect='Enable включает UAC; Disable отключает его и меняет связанные политики.'
+            $where='HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+            $advice='Для обычного использования рекомендую Enable. Отключение не гарантирует прирост FPS.'
+            if ($text -eq 'Enable') { $sources=@('uacEnable'); $effect='Включить: EnableLUA=1, запрос администратора=5, защищённый рабочий стол=1.' }
+            if ($text -eq 'Disable') { $sources=@('uacDisable'); $effect='Отключить: EnableLUA=0 и связанные параметры политики=0. Может потребоваться перезагрузка.' }
+            $details=@('Отключение уменьшает защиту от незаметного повышения прав; некоторые приложения и функции Windows могут зависеть от UAC.','Enable применяет заданный в меню набор значений, а не восстанавливает индивидуальные прежние настройки.')
+        }
+        'fullscreenOptimization' {
+            $summary='FSO — механизм полноэкранного режима Windows для совместимости и презентации кадров.'
+            $effect='Enable/Disable записывает глобальный пользовательский пресет GameConfigStore.'
+            $where='HKCU\System\GameConfigStore'
+            $advice='Начни с Enable. Disable проверяй для конкретной игры при воспроизводимой проблеме.'
+            if ($text -eq 'Enable FSO') { $sources=@('fsoEnable'); $effect='Пресет Enable: пять параметров GameDVR_* записываются как 0.' }
+            if ($text -eq 'Disable FSO') { $sources=@('fsoDisable'); $effect='Пресет Disable: GameDVR_FSEBehaviorMode/FSEBehavior/DSEBehavior=2; остальные смотри в F1.' }
+            $details=@('Это пользовательские параметры совместимости. Их фактическое влияние зависит от Windows, игры и графического API.','Пункт не ставит индивидуальный флажок совместимости у каждого EXE и не доказывает режим конкретной игры.')
+        }
+        'gamebarAndGameMode' {
+            $summary='Game Bar отвечает за захват и запись; Game Mode — за игровой режим Windows.'
+            $effect='Выбери отдельно запись Game Bar или Game Mode: это разные функции.'
+            $where='HKCU\SOFTWARE\Microsoft\GameBar; HKCU\...\GameDVR; HKCU\System\GameConfigStore; HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR'
+            $advice='Game Mode обычно рекомендую включить. Захват Game Bar — только если нужен.'
+            switch ($text) {
+                'Enable Game Mode' { $sources=@('gameModeEnable'); $effect='Включить Game Mode: AllowAutoGameMode=1 и AutoGameModeEnabled=1.' }
+                'Disable Game Mode' { $sources=@('gameModeDisable'); $effect='Выключить Game Mode: оба параметра=0. Сравнивай при проблеме в игре.' }
+                'Disable Game Bar' { $sources=@('gameBarDisable'); $effect='Отключить запись/захват Game DVR: семь параметров=0.'; $advice='Если не пользуешься записью и игровыми клипами, можно отключить захват.' }
+                'Enable Game Bar' { $sources=@('gameBarEnable'); $effect='Разрешить захват, звук, микрофон, курсор и фоновую запись: семь параметров=1.'; $advice='Включай, если нужна запись. Этот пресет также разрешает фоновый захват.' }
+            }
+        }
+        'services' {
+            $summary='Службы — фоновые компоненты Windows и устройств.'
+            $effect='Disable services задаёт Start=4 всему списку. Enable применяет таблицу Start из программы.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Services\<имя службы> | Start'
+            $advice='Оставь штатные службы, если нет конкретной задачи. Общий пресет может убрать нужные функции.'
+            if ($text -eq 'Disable services') { $sources=@('servicesToDisable') }
+            if ($text -like 'Enable services*') { $sources=@('servicesToEnable') }
+            $details=@('В списке есть службы поиска, печати, ввода, удалённого доступа и другие компоненты. Часть функций может перестать работать.','Start: 0=Boot, 1=System, 2=автоматически, 3=вручную, 4=отключено. Изменение Start не всегда немедленно останавливает уже работающую службу.','Enable — фиксированные значения из кода, а не резервная копия прежнего состояния.')
+        }
+        'powersaving' {
+            $summary='Энергосбережение устройств: разрешение отключать устройства и связанные параметры питания.'
+            $effect='Disable device powersaving запускает встроенный сценарий отключения энергосбережения устройств.'
+            $where='Параметры PnP-устройств через Windows/WMI и реестр; конкретные экземпляры определяются при запуске.'
+            $advice='Применяй при проблемах пробуждения/отключения устройств. На ноутбуке учитывай расход батареи.'
+            $details=@('У всех устройств нет одного общего ключа. Набор определяется обнаруженными устройствами и возможностями драйверов.','Отключение энергосбережения не гарантирует меньшую задержку и может увеличить потребление.')
+        }
+        'networkOptimization' {
+            $summary='Пресет для проводного Ethernet: offload, RSS, модерация прерываний, буферы и питание.'
+            $effect='Enable также отключает энергосбережение. Disable удаляет заданные сетевые параметры.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\<адаптер>; Services\NDIS\Parameters'
+            $advice='Если сеть работает стабильно, начни с текущих настроек. Пресет сравнивай на своём адаптере.'
+            $details=@('Примеры из Enable: *RSS=1, *NumRssQueues=1, *InterruptModeration=0, *ReceiveBuffers=4096, *TransmitBuffers=4096. Поддержка зависит от драйвера.','Disable удаляет записанные сетевые параметры; он не возвращает индивидуальные прежние значения и не обещает отменить отдельный этап отключения энергосбережения.','Номер подраздела адаптера зависит от установленного оборудования. Изменение реестра не доказывает, что драйвер принял каждый параметр; может потребоваться перезапуск.')
+        }
+        'mmcss' {
+            $summary='MMCSS помогает планировать мультимедийную работу, в том числе звук.'
+            $effect='Enable/Disable меняет запуск службы; Optimize и Fix Audio Stutters применяют отдельные пресеты.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Services\MMCSS; HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+            $advice='Для обычной работы оставь MMCSS включённым. Звуковой пресет проверяй при реальных прерываниях звука.'
+            switch ($text) {
+                'Enable' { $sources=@('mmcssEnable'); $effect='Разрешить автоматический запуск MMCSS: Start=2.' }
+                'Disable' { $sources=@('mmcssDisable'); $effect='Отключить запуск MMCSS: Start=4. Это может ухудшить обработку мультимедиа.' }
+                'Optimize MMCSS' { $sources=@('mmcssOptimize'); $effect='Записать пресет SystemProfile и задач Audio / Pro Audio / Playback.'; $advice='Экспериментальный пресет. Сначала сохрани исходные значения и сравни звук и игру.' }
+                'Fix Audio Stutters' { $sources=@('mmcssFixAudioStutters'); $effect='SchedulerTimerResolution=1, категория задач=High, Priority When Yielded=19.'; $advice='Пробуй при воспроизводимом заикании звука. Причиной также может быть конкретный драйвер.' }
+            }
+        }
+        'win32PrioritySeparation' {
+            $summary='Параметр планировщика CPU, связанный с квантами и обработкой активных приложений.'
+            $effect='18 (hex) записывает Win32PrioritySeparation=0x18, то есть 24 в десятичном виде.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl | Win32PrioritySeparation'
+            $advice='Оставь текущий режим без конкретной причины. Этот пресет не является универсальным ускорением.'
+            if ($text -eq '18 (hex)') { $sources=@('win32PrioritySeparation18Hex') }
+        }
+        'clockInterrupts' {
+            $summary='Пункт с параметром сериализации истечения таймеров ядра Windows.'
+            $effect='Core 0 записывает SerializeTimerExpiration=1.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel | SerializeTimerExpiration'
+            $advice='Экспериментальный пункт: оставь текущую настройку, если нет отдельного теста.'
+            $details=@('Название Core 0 не является проверкой фактической маршрутизации всех IRQ или DPC. Это отдельный параметр таймеров, а не GPU/USB affinity.')
+            if ($text -eq 'Core 0') { $sources=@('clockInterruptsCore0') }
+        }
+        'hags' {
+            $summary='HAGS — аппаратное планирование GPU; поддержку определяют Windows, GPU и драйвер.'
+            $effect='Enable записывает HwSchMode=2, Disable — HwSchMode=1. Нужна перезагрузка для проверки.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers | HwSchMode'
+            $advice='Сравни оба режима в своей игре; для Frame Generation проверь требования игры.'
+            if ($text -eq 'Enable') { $sources=@('hagsEnable'); $effect='Включить HAGS: HwSchMode=2. Перезагрузи ПК и проверь результат.' }
+            if ($text -eq 'Disable') { $sources=@('hagsDisable'); $effect='Выключить HAGS: HwSchMode=1. Перезагрузи ПК и проверь результат.' }
+        }
+        'qol' {
+            $summary='Удобство Windows: Проводник, уведомления, OneDrive, панель задач и профили пользователей.'
+            $effect='Optimize после ввода QOL применяет широкий набор, включая другие и Default-профили.'
+            $where='HKCU/HKU: Software\Microsoft\Windows\CurrentVersion\Explorer и политики; HKLM: политики Windows/OneDrive.'
+            $advice='Прочитай полный состав до QOL: меняются привычные функции и закрепления панели задач.'
+            $details=@('OneDrive отключается; история Проводника очищается; закрепления панели задач заменяются набором с Проводником.','Часть настроек применяется через SystemParametersInfo и файлы разметки панели задач. Не все изменения являются записями реестра.','QOL — пресет удобства. Его полный индивидуальный откат через меню не предусмотрен.')
+        }
+        'gpu' {
+            $summary='Раздел видеокарты: выбор NVIDIA/AMD и переход к настройкам или драйверам.'
+            $effect='Выбор производителя открывает следующее меню; оптимизация выполняется отдельным пунктом.'
+            $where='У пресетов: HKLM\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000; у установки — отдельный установщик.'
+            $advice='Сначала проверь производителя и конкретное действие. Установка драйвера и пресет — разные операции.'
+        }
+        { $_ -in @('nvidiaPreset','amdPreset') } {
+            $vendor = if ($topic -eq 'nvidiaPreset') { 'NVIDIA' } else { 'AMD' }
+            $summary='Набор параметров драйвера '+$vendor+' из исходного меню.'
+            $effect='Optimize записывает пресет; Revert записывает обратный набор значений из программы.'
+            $where='HKLM\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000'
+            $advice='Перед применением проверь, что ветка 0000 относится к твоей GPU, и сохрани исходные значения.'
+            $sources=if($topic -eq 'nvidiaPreset') { if($text -like 'Revert*'){@('nvidiaGpuRevert')}else{@('nvidiaGpuOptimize')} } else { if($text -like 'Revert*'){@('amdGpuRevert')}else{@('amdGpuOptimize')} }
+            $details=@('Эти параметры зависят от драйвера; часть может не поддерживаться. Их запись не доказывает уменьшение задержки.','Revert не читает твой прежний backup: он применяет фиксированный обратный пресет.','Путь ControlSet001 и индекс 0000 заданы в текущем коде. На другом ПК или после установки драйверов соответствие необходимо проверить.')
+        }
+        'drivers' {
+            $summary='Установка/загрузка драйверов и запуск средств очистки установочных пакетов.'
+            $effect='Enter открывает подменю либо запускает выбранный установщик/загрузку.'
+            $where='Установщик управляет драйверами и их ключами. Единого ключа реестра у этого действия нет.'
+            $advice='Сверь модель GPU, Windows и версию: пакет из меню может быть старее уже установленного.'
+            $details=@('DDU предназначен для удаления драйверов при необходимости; не запускай очистку как обязательный шаг перед каждым обновлением.','Названия и версии встроенных пакетов фиксированы в меню; справка не проверяет свежесть драйвера в интернете.')
+        }
+        'nicDrivers' {
+            $summary='Установщики сетевых драйверов Realtek/Intel, варианты NDIS и NetAdapterCx.'
+            $effect='Выбор открывает подменю либо запускает отдельный пакет драйвера.'
+            $where='Применяется установщик из Resources; ключи и службы определяются пакетом драйвера.'
+            $advice='Выбирай пакет по точной модели адаптера и поддержке своей Windows; новый тип драйвера не всегда быстрее.'
+        }
+        'apps' {
+            $summary='Запуск дополнительных программ и установщиков из проекта.'
+            $effect='Сначала выбери программу. Применение настроек выполняется уже её отдельным пунктом.'
+            $where='Пути в Resources и DEVICE-TWEAKER-V2. Изменения внешней программы зависят от неё.'
+            $advice='Запускай нужную утилиту под конкретную задачу; установка всех программ не требуется.'
+        }
+        'deviceTweaker' {
+            $summary='Exovance Device Tweaker: просмотр CPU/SMT и настройка IRQ, MSI и RSS устройств.'
+            $effect='Launch открывает выбранную версию. Apply/Auto и Backup/Reset находятся в отдельном окне.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Enum\<устройство>\Device Parameters\Interrupt Management; класс сетевого адаптера.'
+            $advice='Сначала Backup и проверка топологии. Номера CPU с другого ПК переносить без проверки нельзя.'
+            $details=@('Устройства могут находиться за общим контроллером. Выбор CPU задаёт политику обработки прерываний, а не переносит вычисления GPU на CPU.','Launch original Device Tweaker открывает сохранённый исходный инструмент; Exovance v2 — отдельную производную версию.')
+        }
+        'nvpi' {
+            $summary='NVIDIA Profile Inspector Revamped: просмотр и изменение профилей драйвера NVIDIA.'
+            $effect='Launch NVPI-R только открывает программу. Import применяет глобальный NvidiaV2.nip в режиме Merge.'
+            $where='База профилей NVIDIA через NVAPI. Это не обычный список ключей реестра CMD.'
+            $advice='Сначала экспортируй текущий профиль. Импорт меняет также G-SYNC/VRR и ReBAR.'
+            $details=@('NvidiaV2.nip содержит 43 записи, включая строковую метку Exovance. Merge объединяет настройки, но это всё равно глобальное применение.','Импорт не включает ReBAR в BIOS и не доказывает поддержку настройки конкретной игрой или GPU.')
+        }
+        'autostart' {
+            $summary='Список программ, запускаемых при входе, и задач автозапуска.'
+            $effect='В отдельном списке Enter переключает выбранную запись. Режим Disable all затрагивает все доступные записи.'
+            $where='Run/RunOnce и StartupApproved в HKCU/HKLM; папки Startup и задачи планировщика.'
+            $advice='Отключай только узнаваемые ненужные программы. Не отключай всё подряд.'
+            $details=@('Автозапуск может обеспечивать работу звука, периферии, синхронизации и других нужных функций.','У записей файловой папки Startup и задач планировщика нет одного общего значения реестра.')
+        }
+        'powerPlan' {
+            $summary='Схема питания управляет политиками энергопотребления Windows.'
+            $effect='Import and Activate импортирует POWER-PLAN\EXOVANCE.pow и активирует Exovance v2 через powercfg.'
+            $where='Управление через powercfg; GUID схемы: 8b24b027-1dee-4c65-8f35-5d5d91e51d87.'
+            $advice='Сначала сохрани GUID текущей схемы: powercfg /getactivescheme. На ноутбуке проверь нагрев и батарею.'
+            $details=@('Схема применяется командой powercfg, а не одним значением реестра. Вернуться к прежней можно через powercfg /setactive <GUID>.','Текущая функция задаёт импортированной схеме имя Exovance v2. Её эффекты определяются содержимым файла .pow.')
+        }
+        'activateWindows' {
+            $summary='Запуск отдельного файла активации Windows из Resources.'
+            $effect='Activate WIN запускает ACTIVATE-WINDOWS.bat; содержание зависит от этого файла.'
+            $where='Resources\ACTIVATE-WINDOWS\ACTIVATE-WINDOWS.bat. Внешний сценарий не описан одной записью реестра.'
+            $advice='Для активации используй действующую лицензию и средства Windows. Это не настройка FPS или задержки.'
+        }
+        'defender' {
+            $summary='Внешняя утилита управления Microsoft Defender.'
+            $effect='Launch WDS запускает отдельную программу; её собственные кнопки меняют защиту.'
+            $where='Resources\WINDOWS-DEFENDER\RUN-WDS.bat; конкретные изменения зависят от внешней утилиты.'
+            $advice='Для обычного ПК рекомендую оставить защиту включённой. Отключение не является обязательным для игр.'
+        }
+        'updates' {
+            $summary='Внешняя утилита блокировки обновлений Windows.'
+            $effect='Launch WUB открывает отдельную программу управления обновлениями.'
+            $where='Resources\WINDOWS-UPDATES\RUN-WUB.bat; службы и политики изменяет внешний инструмент.'
+            $advice='Если нужна пауза перед тестом — сделай её временной; после проверки верни обновления.'
+        }
+        'hidusbf' {
+            $summary='Утилита USB-фильтра для настройки частоты опроса совместимых устройств.'
+            $effect='Открывает HIDUSBF SETUP.exe. Частота и установка фильтра выбираются в его окне.'
+            $where='Resources\HIDUSBF\DRIVER\SETUP.exe; настройки фильтра и конкретного USB-устройства.'
+            $advice='Используй частоту, поддерживаемую устройством. Повышение частоты увеличивает нагрузку и не всегда полезно.'
+        }
+        'external' {
+            $summary='Дополнительная программа: '+$text+'.'
+            $effect='Запускает приложение или установщик из проекта. Системный пресет CMD этим пунктом не применяется.'
+            $where='Отдельный файл программы из Resources; её записи реестра определяются самой программой.'
+            $advice='Устанавливай или запускай только нужный инструмент. Для измерений сохраняй исходные результаты.'
+        }
+        'exit' { $summary='Выход из меню.'; $effect='Закрывает меню.'; $where='Новые изменения не выполняются.'; $advice='Уже применённые настройки сохраняются; выход их не отменяет.' }
+        default {
+            if ($Entry.PSObject.Properties['Description'] -and $Entry.Description) { $summary=[string]$Entry.Description }
+        }
+    }
+    if ($text -eq 'Back') { $summary='Возврат в предыдущее меню.'; $effect='Выйти из раздела без запуска нового действия.'; $where='Новые изменения не выполняются.'; $advice='Esc также возвращает назад. Ранее применённые настройки сохраняются.'; $sources=@(); $details=@() }
+    $registry=@(Get-LlcRegistryHelpLines -VariableNames $sources)
+    if ($registry.Count -gt 0) { $where=$registry[0]; if($registry.Count -gt 1){$where+='; ещё '+($registry.Count-1)+' — F1'} }
+    [pscustomobject]@{ Topic=$topic; Summary=$summary; Effect=$effect; Where=$where; Recommendation=$advice; Details=$details; RegistryLines=$registry; RegistryVariables=$sources; Usage='Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её.' }
+}
+
+function Get-LlcAutostartHelp {
+    param([object]$Entry)
+    $text=if($Entry.Type -eq 'Back'){'Back'}else{'Autostart'}
+    $help=Get-LlcMenuHelp -Title 'Autostart' -Entry ([pscustomobject]@{Text=$text;Value='autostart'})
+    if($Entry.Type -eq 'DisableAll') {
+        $help.Effect='Enter отключает все доступные включённые записи автозапуска.'
+        $help.Recommendation='Предпочтительно отключать выбранные ненужные записи по одной.'
+    } elseif($null -ne $Entry.Item) {
+        $help.Effect=if($Entry.Item.Enabled){'Enter отключит эту запись автозапуска.'}else{'Enter включит эту запись автозапуска.'}
+        $locations=New-Object 'Collections.Generic.List[string]'
+        foreach($property in $Entry.Item.PSObject.Properties) {
+            if($property.Name -match '(?i)(RegistryPath|Location|FolderPath|FilePath|TaskPath|TaskName|ApprovalPath|Source|Command|Name)$' -and $null -ne $property.Value -and [string]$property.Value -ne '') {
+                $locations.Add(($property.Name+': '+[string]$property.Value))
+            }
+        }
+        if($locations.Count -gt 0){$help.Details=@($help.Details)+$locations.ToArray();$help.Where=$locations -join '; '}
+    }
+    return $help
+}
+
+function Get-LlcMenuHelpFooter {
+    param([object]$Help, [int]$Width, [int]$MaxLines=8)
+    $lines=New-Object 'Collections.Generic.List[string]'
+    foreach($field in @(@('Что: ',$Help.Summary),@('Действие: ',$Help.Effect),@('Где: ',$Help.Where),@('Совет: ',$Help.Recommendation))) {
+        # One bounded row per field leaves space for all four kinds of information.
+        $lines.Add((Format-LlcMenuText -Text (' '+$field[0]+$field[1]) -Width $Width))
+    }
+    if ($MaxLines -ge 6) {
+        # Use two rows for the action and location on normal terminals.
+        $lines.Clear()
+        foreach($field in @(@('Что: ',$Help.Summary,1),@('Действие: ',$Help.Effect,2),@('Где: ',$Help.Where,2),@('Совет: ',$Help.Recommendation,2))) {
+            $wrapped=@(Split-LlcMenuHelpText -Text ($field[0]+$field[1]) -Width ([Math]::Max(1,$Width-1)))
+            $count=[Math]::Min([int]$field[2],$wrapped.Count)
+            for($i=0;$i -lt $count;$i++) {
+                $line=$wrapped[$i]
+                if($i -eq $count-1 -and $wrapped.Count -gt $count) { $line=(Format-LlcMenuText -Text $line -Width ([Math]::Max(1,$Width-8)))+'… [F1]' }
+                $lines.Add((' '+$line))
+            }
+        }
+    }
+    return @($lines.ToArray() | Select-Object -First $MaxLines)
+}
+
+function Get-LlcMenuHelpFrame {
+    param([object]$Help, [string]$ItemText, [int]$Width=80, [int]$Height=30, [int]$Offset=0)
+    $lineWidth=[Math]::Max(0,[Math]::Min(104,$Width-1))
+    if($Width -lt 40 -or $Height -lt 10) { return Get-LlcMenuFrame -Title '' -Items @() -SelectedIndex -1 -Width $Width -Height $Height }
+    $content=New-Object 'Collections.Generic.List[string]'
+    foreach($section in @(@('Что это',$Help.Summary),@('Выбранное действие',$Help.Effect),@('Рекомендация',$Help.Recommendation),@('Как пользоваться',$Help.Usage),@('Где меняется',$Help.Where))) {
+        foreach($line in @(Split-LlcMenuHelpText -Text ($section[0]+': '+$section[1]) -Width ($lineWidth-1))) { $content.Add(' '+$line) }
+        $content.Add('')
+    }
+    foreach($detail in $Help.Details) { foreach($line in @(Split-LlcMenuHelpText -Text $detail -Width ($lineWidth-1))){$content.Add(' '+$line)}; $content.Add('') }
+    if($Help.RegistryLines.Count -gt 0) {
+        $content.Add(' Будет записано (из текущих таблиц программы):')
+        foreach($entry in $Help.RegistryLines) { foreach($line in @(Split-LlcMenuHelpText -Text $entry -Width ($lineWidth-1))){$content.Add(' '+$line)} }
+    }
+    foreach($line in @(Split-LlcMenuHelpText -Text 'HKLM = компьютер; HKCU = текущий пользователь; HKU = профили пользователей. Это предлагаемые изменения, а не чтение текущего реестра.' -Width ($lineWidth-1))){$content.Add(' '+$line)}
+    $rows=[Math]::Max(1,$Height-7)
+    $top=[Math]::Max(0,[Math]::Min($Offset,[Math]::Max(0,$content.Count-$rows)))
+    $lines=New-Object 'Collections.Generic.List[string]';$styles=New-Object 'Collections.Generic.List[string]'
+    foreach($line in @(' EXOVANCE / СПРАВКА — без применения настроек',(' '+$ItemText),(' '+('─'*[Math]::Max(0,$lineWidth-2))))) {$lines.Add((Format-LlcMenuText $line $lineWidth -Pad));$styles.Add('brand')}
+    for($i=$top;$i -lt [Math]::Min($content.Count,$top+$rows);$i++){$lines.Add((Format-LlcMenuText $content[$i] $lineWidth -Pad));$styles.Add('detail')}
+    $lines.Add((Format-LlcMenuText (' Строки {0}-{1} / {2}' -f ($top+1),[Math]::Min($content.Count,$top+$rows),$content.Count) $lineWidth -Pad));$styles.Add('hint')
+    $lines.Add((Format-LlcMenuText ' PgUp/PgDn: страницы; Home/End: начало/конец' $lineWidth -Pad));$styles.Add('hint')
+    $lines.Add((Format-LlcMenuText ' Enter / Esc / F1: закрыть справку; настройки не применяются' $lineWidth -Pad));$styles.Add('footer')
+    [pscustomobject]@{Lines=$lines.ToArray();Styles=$styles.ToArray();TopIndex=$top;VisibleRows=$rows;ContentCount=$content.Count;IsTooSmall=$false;SelectedRow=-1}
+}
+
+function Show-LlcMenuHelp {
+    param([object]$Help, [string]$ItemText, [bool]$UseAnsi)
+    Reset-LlcMenuInput
+    $offset=0;$lastSignature='';$dirty=$true
+    while($true) {
+        $size=Get-LlcMenuConsoleSize
+        $signature='{0}x{1}' -f $size.Width,$size.Height
+        if($dirty -or $signature -ne $lastSignature) {
+            $frame=Get-LlcMenuHelpFrame -Help $Help -ItemText $ItemText -Width $size.Width -Height $size.Height -Offset $offset
+            Write-LlcMenuFrame -Frame $frame -UseAnsi $UseAnsi
+            $offset=$frame.TopIndex;$lastSignature=$signature;$dirty=$false
+        }
+        if(-not [Console]::KeyAvailable){Start-Sleep -Milliseconds 20;continue}
+        $key=[Console]::ReadKey($true).Key.ToString()
+        if($key -in @('Escape','Enter','F1')){Reset-LlcMenuInput;return}
+        $next=$offset
+        switch($key){'DownArrow'{$next++};'UpArrow'{$next--};'PageDown'{$next+=$frame.VisibleRows};'PageUp'{$next-=$frame.VisibleRows};'Home'{$next=0};'End'{$next=[int]::MaxValue}}
+        if($next -ne $offset){$offset=$next;$dirty=$true}
+    }
+}
+
 function Get-LlcMenuFrame {
     param(
         [string]$Title,
@@ -261,19 +681,25 @@ function Get-LlcMenuFrame {
     $selectedRow = -1
     $tooSmall = ($Width -lt 40 -or $Height -lt 10)
     if ($tooSmall) {
-        foreach ($text in @('Resize terminal to at least 40 x 10.', 'ESC: back')) {
+        foreach ($text in @('Увеличь терминал минимум до 40 x 10.', 'Esc: назад')) {
             if ($lines.Count -ge $rowLimit) { break }
             $lines.Add((Format-LlcMenuText -Text $text -Width $lineWidth -Pad))
             $styles.Add('hint')
         }
         return [pscustomobject]@{ Lines=$lines.ToArray(); Styles=$styles.ToArray(); TopIndex=0; VisibleRows=0; VisibleIndices=@(); SelectedRow=-1; IsTooSmall=$true }
     }
-    $capacity = [Math]::Max(1, $Height - 8)
-    $rows = [Math]::Min($capacity, $entries.Count)
     $selectedPosition = -1
     for ($i = 0; $i -lt $entries.Count; $i++) {
         if ($entries[$i].Index -eq $SelectedIndex -and $entries[$i].Selectable) { $selectedPosition = $i; break }
     }
+    $detailRows = @(' Выбери пункт. F1: объяснение; Enter: открыть или применить.')
+    if ($selectedPosition -ge 0) {
+        $help = Get-LlcMenuHelp -Title $Title -Entry $entries[$selectedPosition]
+        $helpLimit = if ($Height -ge 24) { 8 } elseif ($Height -ge 16) { 4 } else { 1 }
+        $detailRows = @(Get-LlcMenuHelpFooter -Help $help -Width $lineWidth -MaxLines $helpLimit)
+    }
+    $capacity = [Math]::Max(1, $Height - 7 - $detailRows.Count)
+    $rows = [Math]::Min($capacity, $entries.Count)
     $top = [Math]::Max(0, [Math]::Min($TopIndex, [Math]::Max(0, $entries.Count - $rows)))
     if ($selectedPosition -ge 0) {
         if ($selectedPosition -lt $top) { $top = $selectedPosition }
@@ -300,14 +726,15 @@ function Get-LlcMenuFrame {
         $lines.Add((Format-LlcMenuText -Text $text -Width $lineWidth -Pad)); $styles.Add($style)
     }
     $lines.Add((Format-LlcMenuText -Text $divider -Width $lineWidth -Pad)); $styles.Add('border')
-    $status = ' Rows {0}-{1} / {2}    PgUp/PgDn: page    Home/End' -f ($top + 1), ($top + $rows), $entries.Count
+    $status = ' Строки {0}-{1} / {2}    PgUp/PgDn: страницы    Home/End' -f ($top + 1), ($top + $rows), $entries.Count
     $lines.Add((Format-LlcMenuText -Text $status -Width $lineWidth -Pad)); $styles.Add('hint')
-    $detail = ' Select an item. Changes run only after you press ENTER.'
-    if ($selectedPosition -ge 0 -and -not [string]::IsNullOrWhiteSpace($entries[$selectedPosition].Description)) {
-        $detail = ' ' + $entries[$selectedPosition].Description
+    foreach ($detail in $detailRows) {
+        $lines.Add((Format-LlcMenuText -Text $detail -Width $lineWidth -Pad))
+        $style = if ($detail.TrimStart().StartsWith('Совет:')) { 'advice' } else { 'detail' }
+        $styles.Add($style)
     }
-    $lines.Add((Format-LlcMenuText -Text $detail -Width $lineWidth -Pad)); $styles.Add('detail')
-    $lines.Add((Format-LlcMenuText -Text ' UP/DOWN  move    ENTER  select    ESC  back' -Width $lineWidth -Pad)); $styles.Add('footer')
+    $controls = if ($lineWidth -lt 60) { ' ↑↓ выбор  Enter OK  F1 ?  Esc назад' } else { ' Стрелки: выбор  Enter: действие  F1: справка  Esc: назад' }
+    $lines.Add((Format-LlcMenuText -Text $controls -Width $lineWidth -Pad)); $styles.Add('footer')
     return [pscustomobject]@{ Lines=$lines.ToArray(); Styles=$styles.ToArray(); TopIndex=$top; VisibleRows=$rows; VisibleIndices=$visible.ToArray(); SelectedRow=$selectedRow; IsTooSmall=$false }
 }
 
@@ -324,6 +751,7 @@ function ConvertTo-LlcMenuAnsiFrame {
             'group' { '1;38;2;177;157;247;48;2;10;20;37' }
             'border' { '38;2;57;83;119;48;2;10;20;37' }
             'detail' { '38;2;160;184;210;48;2;10;20;37' }
+            'advice' { '38;2;116;226;184;48;2;10;20;37' }
             default { '38;2;190;205;225;48;2;10;20;37' }
         }
         [void]$builder.Append($esc + '[' + $colors + 'm' + $Frame.Lines[$i] + $esc + '[0m')
@@ -375,6 +803,7 @@ function Write-LlcMenuFrame {
             'brand' { [ConsoleColor]::Cyan }
             'title' { [ConsoleColor]::White }
             'group' { [ConsoleColor]::Magenta }
+            'advice' { [ConsoleColor]::Green }
             default { [ConsoleColor]::Gray }
         }
         [Console]::Write($Frame.Lines[$i])
@@ -422,6 +851,14 @@ function Invoke-Menu {
             $key = [Console]::ReadKey($true).Key.ToString()
             if ($key -eq 'Escape') { Reset-LlcMenuInput; return -1 }
             if ($frame.IsTooSmall) { continue }
+            if ($key -eq 'F1') {
+                $entry = @(Get-LlcMenuEntries -Items $Items | Where-Object { $_.Index -eq $index })[0]
+                $help = Get-LlcMenuHelp -Title $Title -Entry $entry
+                Show-LlcMenuHelp -Help $help -ItemText $entry.Text -UseAnsi $useAnsi
+                Reset-LlcMenuInput
+                $dirty = $true; $lastSignature = ''
+                continue
+            }
             if ($key -eq 'Enter') { Reset-LlcMenuInput; return (Get-LlcMenuValue -Items $Items -Index $index) }
             $next = Get-LlcMenuNextIndex -Items $Items -CurrentIndex $index -Key $key -PageSize $frame.VisibleRows
             if ($next -ne $index) { $index = $next; $dirty = $true }
@@ -6872,7 +7309,7 @@ function Invoke-AutostartFullListMenu {
         }
 
         $getDefaultFooterText = {
-            return ''
+            return 'Отключай только ненужное. Enter: вкл/выкл; F1: источник; Esc: назад'
         }
 
         $writeMenuRow = {
@@ -6985,6 +7422,23 @@ function Invoke-AutostartFullListMenu {
             $previousIndex = $index
             $previousTopIndex = $topIndex
             $previousVisibleRows = $visibleRows
+
+            if ($key.Key -eq [ConsoleKey]::F1) {
+                $help = Get-LlcAutostartHelp -Entry $entries[$index]
+                Show-LlcMenuHelp -Help $help -ItemText (Get-AutostartMenuEntryText -Entry $entries[$index]) -UseAnsi $false
+                Clear-ConsoleScreen
+                Write-BoxTitle -Title $Title
+                Write-Host ''
+                Write-Host ('Entries: {0}' -f $Items.Count) -ForegroundColor DarkGray
+                Write-Host ''
+                $itemTop = [Console]::CursorTop
+                $visibleRows = Get-AutostartVisibleRowCount -ItemTop $itemTop -EntryCount $entries.Count
+                $footerTop = $itemTop + $visibleRows
+                $topIndex = Get-AutostartViewportTopIndex -SelectedIndex $index -CurrentTopIndex $topIndex -VisibleRows $visibleRows -EntryCount $entries.Count
+                & $redrawVisibleRows
+                $lastConsoleSignature = & $getConsoleSignature
+                continue
+            }
 
             switch ($key.Key) {
                 'UpArrow'   { $index = Get-SelectableAutostartMenuIndex -Entries $entries -CurrentIndex $index -Direction -1 }

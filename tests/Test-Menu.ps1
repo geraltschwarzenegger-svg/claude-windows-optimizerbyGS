@@ -1,4 +1,4 @@
-# UI-only regression checks. Never dot-source the application payload.
+﻿# UI-only regression checks. Never dot-source the application payload.
 # Only /demo /snapshot is allowed to run as a complete child script.
 $ErrorActionPreference = 'Stop'
 $script:Passed = 0
@@ -24,7 +24,7 @@ function Test-Case {
     Write-Host ('PASS: ' + $Name) -ForegroundColor Green
 }
 
-foreach ($name in @('Format-LlcMenuText', 'Get-LlcMenuEntries', 'Get-LlcMenuNextIndex', 'Get-LlcMenuValue', 'Get-LlcMenuFrame', 'ConvertTo-LlcMenuAnsiFrame', 'Get-LlcMainMenuItems', 'Invoke-Menu')) {
+foreach ($name in @('Format-LlcMenuText', 'Split-LlcMenuHelpText', 'Get-LlcRegistryHelpLines', 'Get-LlcMenuHelp', 'Get-LlcAutostartHelp', 'Get-LlcMenuHelpFooter', 'Get-LlcMenuHelpFrame', 'Show-LlcMenuHelp', 'Get-LlcMenuEntries', 'Get-LlcMenuNextIndex', 'Get-LlcMenuValue', 'Get-LlcMenuFrame', 'ConvertTo-LlcMenuAnsiFrame', 'Get-LlcMainMenuItems', 'Invoke-Menu')) {
     $definitions = @($ast.FindAll({ param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
     }, $true))
@@ -156,7 +156,7 @@ Test-Case 'selection and description survive repeated paging and resizing' {
         Assert-True (@($frame.Styles | Where-Object { $_ -eq 'selected' }).Count -eq 1) 'Resize duplicated selection.'
     }
     $frame = Get-LlcMenuFrame -Title 'Details' -Items $mainItems -SelectedIndex 0 -Width 100 -Height 30
-    Assert-True (($frame.Lines -join "`n").Contains('No system tweaks are applied.')) 'Selected-item description is missing.'
+    Assert-True (($frame.Lines -join "`n").Contains('Настройки системы не применяются.')) 'Selected-item description is missing.'
 }
 Test-Case 'formatter retains Unicode graphemes and clips wide glyphs without splitting surrogate pairs' {
     $accent = 'e' + [char]0x0301
@@ -166,6 +166,103 @@ Test-Case 'formatter retains Unicode graphemes and clips wide glyphs without spl
     Assert-True ((Format-LlcMenuText -Text $emoji -Width 1) -ceq '') 'Half of a wide emoji was emitted.'
     Assert-True ((Format-LlcMenuText -Text ($emoji + 'x') -Width 2) -ceq $emoji) 'Emoji surrogate pair split.'
     Assert-True ((Format-LlcMenuText -Text ($wide + 'x') -Width 2) -ceq $wide) 'Wide CJK cell was clipped incorrectly.'
+}
+
+Test-Case 'every main menu entry has Russian context and a recommendation' {
+    foreach($entry in @(Get-LlcMenuEntries $mainItems | Where-Object {$_.Selectable})) {
+        $help=Get-LlcMenuHelp 'Exovance Optimizer v2' $entry
+        Assert-True (-not [string]::IsNullOrWhiteSpace($help.Topic)) ('Missing topic: '+$entry.Text)
+        Assert-True (-not [string]::IsNullOrWhiteSpace($help.Where)) ('Missing target: '+$entry.Text)
+        foreach($field in @('Summary','Effect','Recommendation','Usage')) {
+            Assert-True ([string]$help.$field -match '[А-Яа-яЁё]') ('Missing Russian '+$field+' for '+$entry.Text)
+        }
+    }
+}
+Test-Case 'literal submenu entries resolve to a contextual help topic' {
+    $menus=$ast.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-Menu'},$true)
+    foreach($menu in $menus) {
+        $title='';$items=$null
+        for($i=0;$i -lt $menu.CommandElements.Count-1;$i++) {
+            if($menu.CommandElements[$i].Extent.Text -eq '-Title') {
+                $argument=$menu.CommandElements[$i+1]
+                if($argument -is [Management.Automation.Language.StringConstantExpressionAst]){$title=$argument.Value}
+                elseif($argument.Extent.Text -match 'NetworkAdapter'){$title='MMCSS - adapter'}
+                elseif($argument.Extent.Text -match 'Gpu'){$title='GPU - adapter'}
+            }
+            if($menu.CommandElements[$i].Extent.Text -eq '-Items'){$items=$menu.CommandElements[$i+1]}
+        }
+        if($null -eq $items -or $title -eq '' -or $title -like 'UI PREVIEW*'){continue}
+        foreach($item in $items.FindAll({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst]},$true)) {
+            if($item.Value -in @('Text','Value','gpuDrivers','GPU')){continue}
+            $help=Get-LlcMenuHelp $title ([pscustomobject]@{Text=$item.Value;Value=-1})
+            Assert-True ($help.Topic -ne '') ('Missing submenu help: '+$title+' / '+$item.Value)
+        }
+    }
+}
+Test-Case 'registry help uses actual application tables and distinguishes Enable from Disable' {
+    # Evaluate only named, static data assignments from the real payload.
+    $names=@('gameConfigKey','gameDvrKey','gameDvrPolicyKey','gameBarKey','gameBarDisable','gameBarEnable','gameModeDisable','gameModeEnable','uacSystemKey','uacDisable','uacEnable','fsoEnable','fsoDisable','hagsGraphicsDriversKey','hagsEnable','hagsDisable','clockInterruptsCore0','win32PrioritySeparation18Hex')
+    foreach($statement in $ast.EndBlock.Statements) {
+        if($statement -is [Management.Automation.Language.AssignmentStatementAst] -and $statement.Left.Extent.Text.TrimStart('$') -in $names) {
+            . ([scriptblock]::Create($statement.Extent.Text))
+        }
+    }
+    foreach($case in @(
+        @('UAC','Enable','EnableLUA = 1',10),@('UAC','Disable','EnableLUA = 0',10),
+        @('Hardware-Accelerated GPU Scheduling','Enable','HwSchMode = 2',1),@('Hardware-Accelerated GPU Scheduling','Disable','HwSchMode = 1',1),
+        @('Gamebar and Game Mode','Enable Game Mode','AutoGameModeEnabled = 1',2),@('Gamebar and Game Mode','Disable Game Mode','AutoGameModeEnabled = 0',2),
+        @('Fullscreen Optimization','Disable FSO','GameDVR_FSEBehaviorMode = 2',5),
+        @('Win32PrioritySeparation','18 (hex)','Win32PrioritySeparation = 0x18',1)
+    )) {
+        $help=Get-LlcMenuHelp $case[0] ([pscustomobject]@{Text=$case[1];Value=-1})
+        Assert-True ($help.RegistryLines.Count -eq $case[3]) ('Wrong registry record count: '+$case[0])
+        Assert-True (($help.RegistryLines -join "`n").Contains($case[2])) ('Wrong write preview: '+$case[0]+' / '+$case[1])
+        $frame=Get-LlcMenuHelpFrame $help $case[1] 80 30
+        Assert-FrameBounds $frame 80 30
+        Assert-True ($frame.ContentCount -gt 0) 'Empty detail view.'
+    }
+}
+Test-Case 'full help pagination preserves long registry paths and all rows after resize' {
+    $help=Get-LlcMenuHelp 'Services' ([pscustomobject]@{Text='Disable services';Value=-1})
+    $help.RegistryLines=@(0..35 | ForEach-Object {'HKLM\SYSTEM\CurrentControlSet\Services\VeryLongExampleService'+$_+' | Start = 4 (DWord)'})
+    foreach($size in @(@(40,10),@(80,30),@(180,60),@(20,5))) {
+        $frame=Get-LlcMenuHelpFrame $help 'Disable services' $size[0] $size[1] ([int]::MaxValue)
+        Assert-FrameBounds $frame $size[0] $size[1]
+        if(-not $frame.IsTooSmall){Assert-True ($frame.TopIndex+$frame.VisibleRows -ge $frame.ContentCount) 'End did not reach final registry entry.'}
+    }
+    $lines=@()
+    for($offset=0;$offset -lt 250;$offset+=3) {
+        $frame=Get-LlcMenuHelpFrame $help 'Disable services' 40 10 $offset
+        $lines+=@($frame.Lines)
+        if($frame.TopIndex+$frame.VisibleRows -ge $frame.ContentCount){break}
+    }
+    $flat=($lines -join '') -replace '\s',''
+    Assert-True ($flat.Contains('VeryLongExampleService0') -and $flat.Contains('VeryLongExampleService35')) 'Long help lost registry rows.'
+}
+Test-Case 'help has no write commands and F1 cannot dispatch the selected tweak' {
+    foreach($name in @('Get-LlcMenuHelp','Get-LlcRegistryHelpLines','Get-LlcAutostartHelp','Get-LlcMenuHelpFrame','Show-LlcMenuHelp')) {
+        $definition=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
+        foreach($command in $definition.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst]},$true)) {
+            Assert-True ($command.GetCommandName() -in @('Get-Variable','Get-LlcRegistryHelpLines','Get-LlcMenuHelp','New-Object','Format-LlcMenuText','Split-LlcMenuHelpText','Get-LlcMenuFrame','Get-LlcMenuHelpFrame','Get-LlcMenuConsoleSize','Write-LlcMenuFrame','Reset-LlcMenuInput','Start-Sleep')) ('Help invokes a backend command: '+$command.GetCommandName())
+        }
+    }
+    $menu=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-Menu'},$true)
+    $f1=$menu.Find({param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -eq "`$key -eq 'F1'"},$true)
+    Assert-True ($null -ne $f1 -and $f1.Clauses[0].Item2.Statements[-1] -is [Management.Automation.Language.ContinueStatementAst]) 'F1 falls through to action dispatch.'
+    Assert-True (-not $f1.Extent.Text.Contains('Get-LlcMenuValue')) 'F1 returns an action value.'
+}
+Test-Case 'autostart help explains the selected source without toggling it' {
+    $item=[pscustomobject]@{Name='Example';Enabled=$true;RegistryPath='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run';Command='example.exe'}
+    $help=Get-LlcAutostartHelp ([pscustomobject]@{Type='Item';Item=$item})
+    Assert-True ($help.Effect.Contains('отключит') -and $help.Where.Contains($item.RegistryPath)) 'Missing autostart source or action.'
+    Assert-True $item.Enabled 'Help toggled an autostart item.'
+    $item.Enabled=$false
+    $help=Get-LlcAutostartHelp ([pscustomobject]@{Type='Item';Item=$item})
+    Assert-True ($help.Effect.Contains('включит')) 'Disabled startup item has wrong instruction.'
+}
+Test-Case 'Windows launcher explicitly decodes the Russian payload as UTF-8' {
+    $launcher=[IO.File]::ReadAllText($cmdPath)
+    Assert-True ($launcher.Contains('Get-Content -LiteralPath $src -Encoding UTF8')) 'WinPS 5.1 can corrupt Russian characters on an ANSI code page.'
 }
 
 # Minimal buffered terminal model: supports the renderer's CSI SGR, home and
