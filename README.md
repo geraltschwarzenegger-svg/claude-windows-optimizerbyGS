@@ -1,6 +1,6 @@
 <div align="center">
 
-![Low Latency — Windows Toolkit by GS](docs/assets/banner.svg)
+![Low Latency — Windows Toolkit by Exovance](docs/assets/banner-exovance.png)
 
 # ⚡ Windows Optimizer by GS
 
