@@ -98,6 +98,52 @@ Test-Case 'virtual-only NDIS does not request an affinity mode' {
     Assert-True (Test-ShouldShowNdisAffinityModeDialog @($vpn,$nic)) 'Physical NDIS missing dialog.'
 }
 
+# Execute actual topology/selector functions from the application, without GUI,
+# registry mocks, or replacing the sorting/ranking implementation.
+function Test-GpuTopologyFixture {
+    param($Fixture)
+    foreach($name in @('Get-DeviceTweakerFastIntPropertyValue','ConvertTo-DeviceTweakerFastSortedByIntProperty','ConvertTo-DeviceTweakerFastSortedUniqueIntArray','Get-DeviceTweakerFastPairIntValue','Compare-DeviceTweakerGpuPair','ConvertTo-DeviceTweakerFastSortedGpuPairs','Get-SmtSets','Find-GPUCores','Find-GPUCoresSecret','Add-SecretReason')) {
+        $definition=$app.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
+        Assert-True ($null -ne $definition) ('Missing actual planner function: '+$name)
+        . ([scriptblock]::Create($definition.Extent.Text))
+    }
+    $script:cppcEnabled=[bool]$Fixture.Cppc
+    $script:cppcRatings=if($Fixture.Ratings){$Fixture.Ratings}else{@{}}
+    $script:PhysicalCoreTopology=@($Fixture.Units | ForEach-Object { [pscustomobject]@{Id=$_.Id;LogicalProcessors=$_.Cores} })
+    $sets=@(Get-SmtSets -logicalCount $Fixture.LogicalCount -pCores $Fixture.PCores)
+    foreach($selector in @('Find-GPUCores','Find-GPUCoresSecret')) {
+        $usedCores=@{}
+        foreach($cpu in $Fixture.UsedCores){$usedCores[[int]$cpu]=$true}
+        $usedSets=@{}
+        foreach($unit in $Fixture.UsedUnits){$usedSets[[int]$unit]=$true}
+        $result=& $selector -pCoreIndicesParam $Fixture.PCores -smtSetsParam $sets -htEnabledParam $Fixture.Ht -usedCoresRef ([ref]$usedCores) -usedSmtSetsRef ([ref]$usedSets)
+        if($null -eq $Fixture.Expected) {
+            Assert-True ($null -eq $result) ($selector+' fabricated a GPU pair when no eligible pair exists.')
+        } else {
+            Assert-True (($result.Cores -join ',') -eq ($Fixture.Expected -join ',')) ($selector+' selected unexpected CPUs: '+($result.Cores -join ','))
+            Assert-True (@($result.Cores | Select-Object -Unique).Count -eq 2) 'Duplicate GPU processors.'
+            Assert-True (@($result.Cores | Where-Object {$Fixture.PCores -notcontains $_ -or $Fixture.UsedCores -contains $_}).Count -eq 0) 'GPU escaped the candidate partition or used a reserved CPU.'
+            if($Fixture.Ht) { Assert-True (@($result.SmtIds | Select-Object -Unique).Count -eq 2) 'GPU selected two siblings of one physical core.' }
+        }
+    }
+}
+$pairedUnits=@(for($i=0;$i -lt 8;$i++){@{Id=$i;Cores=@((2*$i),(2*$i+1))}})
+$splitUnits=@(for($i=0;$i -lt 8;$i++){@{Id=$i;Cores=@($i,($i+8))}})
+$gpuFixtures=@(
+    @{Name='SMT pairs 0/1 and 2/3';LogicalCount=16;PCores=@(0..15);Ht=$true;Units=$pairedUnits;Expected=@(12,14)},
+    @{Name='SMT siblings numbered 0/8 and 1/9';LogicalCount=16;PCores=@(0..15);Ht=$true;Units=$splitUnits;Expected=@(6,7)},
+    @{Name='SMT disabled';LogicalCount=8;PCores=@(0..7);Ht=$false;Units=@(0..7|ForEach-Object {@{Id=$_;Cores=@($_)}});Expected=@(6,7)},
+    @{Name='hybrid CPU keeps GPU inside supplied P-core candidates';LogicalCount=16;PCores=@(0..7);Ht=$true;Units=$pairedUnits[0..3];Expected=@(4,6)},
+    @{Name='a reserved SMT sibling excludes its whole physical core';LogicalCount=16;PCores=@(0..15);Ht=$true;Units=$pairedUnits;UsedCores=@(13);Expected=@(8,10)},
+    @{Name='explicit physical-unit reservation is respected';LogicalCount=16;PCores=@(0..15);Ht=$true;Units=$pairedUnits;UsedUnits=@(6);Expected=@(8,10)},
+    @{Name='selected CCD partition has CPU numbers above 15';LogicalCount=24;PCores=@(16..23);Ht=$true;Units=@(for($i=8;$i -lt 12;$i++){@{Id=$i;Cores=@((2*$i),(2*$i+1))}});Expected=@(20,22)},
+    @{Name='too few eligible physical cores';LogicalCount=4;PCores=@(0..3);Ht=$true;Units=$pairedUnits[0..1];Expected=$null},
+    @{Name='CPPC ranks supplied pairs without imposing fixed CPU numbers';LogicalCount=8;PCores=@(0..7);Ht=$true;Units=$pairedUnits[0..3];Cppc=$true;Ratings=@{0=1;1=1;2=1;3=1;4=100;5=100;6=90;7=90};Expected=@(4,6)}
+)
+foreach($fixture in $gpuFixtures) {
+    Test-Case ('actual GPU topology selectors: '+$fixture.Name) { Test-GpuTopologyFixture $fixture }
+}
+
 # Mock boundary keeps real plan, snapshot, rollback, and app affinity functions intact.
 function Test-RegistryFixture {
     param([scriptblock]$FixtureBody)
