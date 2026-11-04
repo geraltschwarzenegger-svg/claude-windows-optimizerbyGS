@@ -137,7 +137,15 @@ Test-Case 'RSS backup roundtrip preserves types, values and absence through JSON
         $script:Values['*NumaNodeId']=[pscustomobject]@{Name='*NumaNodeId';Present=$true;Kind='String';Value='-1'}
         $snapshot=@(Get-ExovanceRssSnapshot 'HKLM:\FAKE')
         $json=ConvertTo-Json -InputObject $snapshot -Depth 8
-        $restored=@(ConvertFrom-Json -InputObject $json)
+        # WinPS 5.1 emits a top-level JSON array as one pipeline object;
+        # PS 7 enumerates it. Direct assignment preserves its seven entries in both.
+        $restored=ConvertFrom-Json -InputObject $json
+        Assert-True ($restored.Count -eq 7) 'Top-level JSON lost RSS entries.'
+        # Exercise the application's actual nested Devices/ExovanceRss schema too.
+        $documentJson=ConvertTo-Json -InputObject ([pscustomobject]@{Devices=@([pscustomobject]@{ExovanceRss=$snapshot})}) -Depth 10
+        $document=ConvertFrom-Json -InputObject $documentJson
+        $restored=@($document.Devices[0].ExovanceRss)
+        Assert-True ($restored.Count -eq 7) 'Full backup JSON lost RSS entries.'
         $null=Set-ExovanceRssConfiguration 'HKLM:\FAKE' 4 2
         Restore-ExovanceRssSnapshot 'HKLM:\FAKE' $restored
         Assert-True ($script:Values.Count -eq 2) 'Previously absent values were not removed.'
