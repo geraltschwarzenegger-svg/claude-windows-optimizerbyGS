@@ -31,3 +31,7 @@ pwsh -NoLogo -NoProfile -File ./tests/Test-Menu.ps1
 Из корня проекта: `pwsh -NoLogo -NoProfile -File ./tests/Test-DeviceTweakerV2.ps1` (Windows: `powershell.exe -NoProfile -File .\tests\Test-DeviceTweakerV2.ps1`). Проверяются 64-битные маски, топология и границы RSS, точный backup через JSON, отказ записи/rollback, zero-mask reset и подключение меню. Реестр подменяется в памяти. На Windows дополнительно компилируется встроенный WinForms C#; окно не запускается.
 
 Тема и индикация Exovance: `pwsh -NoLogo -NoProfile -File ./tests/Test-DeviceTweakerUI.ps1`. Проверяются реальные цветовые функции приложения, контраст, отдельные selected/hover-состояния и запрет успешной индикации при ошибке. Окно не запускается.
+
+## Журналы Device Tweaker v2
+
+`pwsh -NoProfile -File ./tests/Test-DeviceLogs.ps1` (Windows: `powershell.exe -NoProfile -File .\tests\Test-DeviceLogs.ps1`) проверяет 19 сценариев на временных файлах и подменённом реестре: отдельные сеансы, владение последней сводкой, архивирование старого лога, отмену и частичную ошибку, реальные функции записи affinity/priority, различение отсутствия и нуля, виртуальные адаптеры, сравнение до/после, сохранение причины ошибки, UTF-8/JSONL, отказ диска, ошибки фонового writer и очередь исключений интерфейса. Отдельно проверяется расшифровка масок с CPU 31/32/63. Окно не создаётся, настройки устройств не записываются. Проверки включены в оба задания CI.

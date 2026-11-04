@@ -1239,7 +1239,7 @@ function Append-DeviceTweakerFormattedLogEntry {
 
 $script:DeviceTweakerAsyncLogQueue  = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
 $script:DeviceTweakerAsyncLogSignal = [System.Threading.AutoResetEvent]::new($false)
-$script:DeviceTweakerAsyncLogState  = [hashtable]::Synchronized(@{ Started = $false; Stop = $false })
+$script:DeviceTweakerAsyncLogState  = [hashtable]::Synchronized(@{ Started = $false; Stop = $false; Errors = [System.Collections.Concurrent.ConcurrentQueue[string]]::new() })
 $script:DeviceTweakerAsyncLogWorker = $null
 $script:DeviceTweakerAsyncLogHandle = $null
 
@@ -1408,7 +1408,9 @@ function ConvertTo-DeviceTweakerQueuedLogText {
                     } else {
                         [System.IO.File]::AppendAllText($path, $text, $utf8NoBom)
                     }
-                } catch {}
+                } catch {
+                    try { if ($State.Errors.Count -lt 64) { $State.Errors.Enqueue($path+': '+$_.Exception.Message) } } catch { }
+                }
                 $item = $null
             }
 
@@ -1706,6 +1708,8 @@ function Enter-DeviceTweakerUiAction {
     Reset-ExovanceWriteFailures
     $script:deviceTweakerBusy = $true
     $script:deviceTweakerBusyOwner = $Name
+    Start-ExovanceLoggedAction -Name $Name
+    if($script:ExovanceLogSession){try{Update-ExovanceDeviceLogSnapshot -Devices $deviceList -LogicalCount $script:cachedLogicalCount -PhysicalCount (Get-PhysicalCoreCount) -Phase Before}catch{Write-ExovanceLogEvent -Level Warning -Code SnapshotUnavailable -Stage Snapshot -Message ('Снимок до действия недоступен: '+$_.Exception.Message)}}
     $script:ExovanceEditorsWereEnabled = $null
     if ($null -ne $script:scrollInnerPanel) {
         $script:ExovanceEditorsWereEnabled = $script:scrollInnerPanel.Enabled
@@ -1793,6 +1797,10 @@ function Exit-DeviceTweakerUiAction {
     finally {
         if ($null -ne $script:scrollInnerPanel -and $null -ne $script:ExovanceEditorsWereEnabled) { $script:scrollInnerPanel.Enabled = [bool]$script:ExovanceEditorsWereEnabled }
         if ($script:ExovanceUiState -eq 'Working') { Set-ExovanceUiFeedback -State Ready -Text 'Ready - no new changes applied' }
+        if ($script:ExovanceLogSession -and $script:ExovanceLogSession.ActiveAction) {
+            try { Update-ExovanceDeviceLogSnapshot -Devices $deviceList -LogicalCount $script:cachedLogicalCount -PhysicalCount (Get-PhysicalCoreCount) -Phase After } catch { Write-ExovanceLogEvent -Level Warning -Code SnapshotUnavailable -Stage Snapshot -Message ('Снимок после действия недоступен: '+$_.Exception.Message) }
+            Complete-ExovanceLoggedAction -State $script:ExovanceUiState -Text $script:ExovanceUiMessage
+        }
         $script:deviceTweakerBusy = $false
         $script:deviceTweakerBusyOwner = $null
     }
@@ -17707,6 +17715,7 @@ public static class UiFastPath {
 }
 
 public static class WinFormsUnhandledExceptionShield {
+    public static readonly System.Collections.Concurrent.ConcurrentQueue<string> Diagnostics = new System.Collections.Concurrent.ConcurrentQueue<string>();
     private static bool _installed;
 
     public static void Install() {
@@ -17741,6 +17750,7 @@ public static class WinFormsUnhandledExceptionShield {
 
     private static void OnThreadException(object sender, ThreadExceptionEventArgs e) {
         if (e != null && IsExpectedShutdownException(e.Exception)) return;
+        try { Diagnostics.Enqueue(e == null || e.Exception == null ? "Unknown UI exception" : e.Exception.ToString()); } catch { }
 
         try {
             MessageBox.Show(
@@ -21549,7 +21559,7 @@ public static class DeviceTweakerDiscovery
                         rows.Add(row);
                         if (logs != null)
                         {
-                            logs.Add("Get-NetworkAdapters: '" + SafeText(name) + "' matched physical adapter");
+                            logs.Add("Get-NetworkAdapters: '" + SafeText(name) + "' matched adapter candidate (physical identity is checked before writes)");
                             logs.Add("Get-NetworkAdapters: Detected network adapter:");
                             logs.Add("  Name               : '" + SafeText(name) + "'");
                             logs.Add("  ResolvedName       : '" + SafeText(resolvedName) + "'");
@@ -25538,7 +25548,7 @@ public static class DeviceTweakerMechanicalDiscoveryLog
             AddField(fields, "hwId", Quote(rec.HwId));
             AddField(fields, "USBSpeed", ep != null ? EmptyToNone(ep.Speed) : "<unavailable>");
             AddField(fields, "bInterval", ep != null ? ep.bInterval.ToString() : "<unavailable>");
-            AddField(fields, "PollingRate", FormatPollingRate(ep));
+            AddField(fields, "DescriptorPollingRate", FormatPollingRate(ep));
             AddField(fields, "USBInterface", FormatInterface(mi, ep));
             AddField(fields, "EndpointAddress", ep != null ? EmptyToNone(ep.EndpointAddress) : "<unknown>");
             AddField(fields, "Interval", FormatInterval(ep));
@@ -26328,7 +26338,7 @@ public static class DeviceTweakerMechanicalDiscoveryLog
                 continue;
             }
 
-            AddLine(lines, "Get-NetworkAdapters: " + Quote(adapterName) + " matched physical adapter");
+            AddLine(lines, "Get-NetworkAdapters: " + Quote(adapterName) + " matched adapter candidate (physical identity is checked before writes)");
             object row = FindNetworkRowByOriginalName(networkRows, adapterName);
             AddLegacyNetworkDetectedBlock(lines, row, adapterName);
         }
@@ -28948,6 +28958,7 @@ public sealed class DeviceTweakerHeaderControlsNative
     public HeaderSurfaceItem SecretTweakPrefix;
     public HeaderSurfaceItem SecretTweakBuy;
     public HeaderSurfaceItem Feedback;
+    public HeaderSurfaceItem Logs;
     public HeaderSurfaceItem BeyondServicePrefix;
     public HeaderSurfaceItem Service;
     public HeaderSurfaceItem BeyondGuidesPrefix;
@@ -29120,7 +29131,8 @@ public static class DeviceTweakerFormFactory
         c.BeyondGuidesPrefix = surface.AddText("", linkFont, lightGray, 100, 112);
         c.Guides = surface.AddLink("Credits", linkFont, ExovancePalette.Muted, ExovancePalette.Text, 100, 112);
         c.Gaming = surface.AddText("", linkFont, lightGray, 180, 112);
-        c.Feedback = surface.AddText("Ready - no changes applied", linkFont, ExovancePalette.Muted, 210, 112);
+        c.Logs = surface.AddLink("Логи", linkFont, ExovancePalette.Accent, ExovancePalette.Text, 180, 112);
+        c.Feedback = surface.AddText("Ready - no changes applied", linkFont, ExovancePalette.Muted, 400, 112);
         if (panel != null) { panel.Controls.Add(surface); }
         return c;
     }
@@ -29557,6 +29569,11 @@ function Write-DeviceTweakerPerfFallbackLog {
     if ($script:DisableLogs) { return }
     try {
         if ([string]::IsNullOrWhiteSpace([string]$script:cachedLogFile)) { return }
+        if (Get-Command Write-ExovanceLogEvent -ErrorAction SilentlyContinue) {
+            $level='Warning'
+            if($Text -match '\[(INFO|DEBUG|WARN|WARNING|ERROR)\]') { $level=switch($Matches[1]){'ERROR'{'Error'};{$_ -in @('WARN','WARNING')}{'Warning'};default{'Info'}} }
+            Write-ExovanceLogEvent -Level $level -Code DiscoveryDiagnostic -Stage Discovery -Message $Text
+        }
         $buf = [System.Collections.Generic.List[string]]::new()
         Add-DeviceTweakerFormattedLogEntry -Buffer $buf -Timestamp (Get-Date) -Text $Text
         Queue-DeviceTweakerLogText -Path $script:cachedLogFile -Text (($buf -join [Environment]::NewLine) + [Environment]::NewLine)
@@ -35258,7 +35275,8 @@ if ($script:DebugFunctions) { Add-DeviceTweakerFunctionTiming -Name 'Script-Boot
 Remove-Variable -Name _dtScriptBootstrapSw, _t_bootstrap_ms -ErrorAction SilentlyContinue
 
 $script:cachedLogDir  = Join-Path $script:cachedScriptDir 'logs'
-$script:cachedLogFile = Join-Path $script:cachedLogDir 'logging.txt'
+Initialize-ExovanceLogSession -Directory $script:cachedLogDir -AppPath $PSCommandPath -Disabled:$script:DisableLogs
+$script:cachedLogFile = if($script:ExovanceLogSession){$script:ExovanceLogSession.DiscoveryPath}else{Join-Path $script:cachedLogDir 'discovery-fallback.txt'}
 Start-DeviceTweakerAsyncLogWriter
 
 
@@ -35667,8 +35685,9 @@ function Get-CurrentDevicePolicy {
 }
 
 function Set-DevicePolicy($registryPath, $policy) {
+    $failureDetail = 'registry operation failed (no writable key returned).'
     $relativePath = Get-RelativeRegistryPath $registryPath
-    if ([string]::IsNullOrWhiteSpace([string]$relativePath)) { Add-ExovanceWriteFailure 'Set-DevicePolicy: registry operation failed.'; return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$relativePath)) { Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DevicePolicy' 'Set-DevicePolicy: registry operation failed.'; return $false }
     $targetSubkey = "$relativePath\Device Parameters\Interrupt Management\Affinity Policy"
     try {
         $regKey = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey(
@@ -35678,10 +35697,10 @@ function Set-DevicePolicy($registryPath, $policy) {
         if ($regKey -ne $null) {
             $regKey.SetValue("DevicePolicy", [int]$policy, [Microsoft.Win32.RegistryValueKind]::DWord)
             $regKey.Close()
-            return $true
+            try { Write-ExovanceSettingAccepted -DevicePath $registryPath -Setting 'DevicePolicy' -Value $policy } catch { }; return $true
         }
-    } catch { }
-    Add-ExovanceWriteFailure 'Set-DevicePolicy: registry operation failed.'; return $false
+    } catch { $failureDetail = $_.Exception.Message }
+    Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DevicePolicy' ('Set-DevicePolicy: '+$failureDetail); return $false
 }
 
 
@@ -38215,18 +38234,19 @@ function Get-CurrentPriority {
 }
 
 function Set-DevicePriority($registryPath, $priority) {
+    $failureDetail = 'registry operation failed (no writable key returned).'
     try {
         $relativePath = Get-RelativeRegistryPath $registryPath
-        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) { Add-ExovanceWriteFailure 'Set-DevicePriority: registry operation failed.'; return $false }
+        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) { Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DevicePriority' 'Set-DevicePriority: registry operation failed.'; return $false }
         $targetSubkey = "$relativePath\Device Parameters\Interrupt Management\Affinity Policy"
         $regKey = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($targetSubkey, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree)
         if ($regKey -ne $null) {
             $regKey.SetValue("DevicePriority", [int]$priority, [Microsoft.Win32.RegistryValueKind]::DWord)
             $regKey.Close()
-            return $true
+            try { Write-ExovanceSettingAccepted -DevicePath $registryPath -Setting 'DevicePriority' -Value $priority } catch { }; return $true
         }
-    } catch { }
-    Add-ExovanceWriteFailure 'Set-DevicePriority: registry operation failed.'; return $false
+    } catch { $failureDetail = $_.Exception.Message }
+    Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DevicePriority' ('Set-DevicePriority: '+$failureDetail); return $false
 }
 
 function Get-CurrentMSI {
@@ -38245,8 +38265,9 @@ function Get-CurrentMSI {
 }
 
 function Set-DeviceMSI($registryPath, $msiEnabled, $msgLimit) {
+    $failureDetail = 'registry operation failed (no writable key returned).'
     $relativePath = Get-RelativeRegistryPath $registryPath
-    if ([string]::IsNullOrWhiteSpace([string]$relativePath)) { Add-ExovanceWriteFailure 'Set-DeviceMSI: registry operation failed.'; return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$relativePath)) { Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DeviceMSI' 'Set-DeviceMSI: registry operation failed.'; return $false }
     $subkeySuffix = 'Device Parameters\Interrupt Management\MessageSignaledInterruptProperties'
     $subkeyPath = "$relativePath\$subkeySuffix"
     try {
@@ -38255,7 +38276,7 @@ function Set-DeviceMSI($registryPath, $msiEnabled, $msgLimit) {
             if (Test-DeviceTweakerNullLike $msgLimit) {
                 Remove-DeviceTweakerRegistryValue -RegistryPath $registryPath -SubkeySuffix $subkeySuffix -ValueName 'MessageNumberLimit' | Out-Null
             }
-            return $true
+            try { Write-ExovanceSettingAccepted -DevicePath $registryPath -Setting 'MSI / MessageNumberLimit' -Value ([string]$msiEnabled+'; limit='+$(if(Test-DeviceTweakerNullLike $msgLimit){'<удалить / не задано>'}else{[string]$msgLimit})) } catch { }; return $true
         }
 
         $regKey = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($subkeyPath, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree)
@@ -38270,10 +38291,10 @@ function Set-DeviceMSI($registryPath, $msiEnabled, $msgLimit) {
                 $regKey.SetValue("MessageNumberLimit", [int]$msgLimit, [Microsoft.Win32.RegistryValueKind]::DWord)
             }
             $regKey.Close()
-            return $true
+            try { Write-ExovanceSettingAccepted -DevicePath $registryPath -Setting 'MSI / MessageNumberLimit' -Value ([string]$msiEnabled+'; limit='+$(if(Test-DeviceTweakerNullLike $msgLimit){'<удалить / не задано>'}else{[string]$msgLimit})) } catch { }; return $true
         }
-    } catch { }
-    Add-ExovanceWriteFailure 'Set-DeviceMSI: registry operation failed.'; return $false
+    } catch { $failureDetail = $_.Exception.Message }
+    Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DeviceMSI' ('Set-DeviceMSI: '+$failureDetail); return $false
 }
 
 function Set-DeviceAffinity($registryPath, $affinityHex) {
@@ -38286,8 +38307,8 @@ function Set-DeviceAffinity($registryPath, $affinityHex) {
         if (-not [BitConverter]::IsLittleEndian) { [array]::Reverse($bytes) }
         Set-ExovanceRegistryValue -RegistryPath $path -Name 'AssignmentSetOverride' -Value $bytes -Kind Binary
         Set-ExovanceRegistryValue -RegistryPath $path -Name 'DevicePolicy' -Value 4 -Kind DWord
-        return $true
-    } catch { Add-ExovanceWriteFailure ('IRQ affinity: ' + $_.Exception.Message); return $false }
+        try { Write-ExovanceSettingAccepted -DevicePath $registryPath -Setting 'AssignmentSetOverride / DevicePolicy=4' -Value ('0x'+$mask.ToString('X')) } catch { }; return $true
+    } catch { Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Set-DeviceAffinity' ('IRQ affinity: ' + $_.Exception.Message); return $false }
 }
 
 function Clear-DeviceAffinity($registryPath) {
@@ -38295,8 +38316,8 @@ function Clear-DeviceAffinity($registryPath) {
         $path = $registryPath.TrimEnd('\') + '\Device Parameters\Interrupt Management\Affinity Policy'
         Set-ExovanceRegistryState -RegistryPath $path -State ([pscustomobject]@{Name='AssignmentSetOverride'; Present=$false})
         Set-ExovanceRegistryValue -RegistryPath $path -Name 'DevicePolicy' -Value 0 -Kind DWord
-        return $true
-    } catch { Add-ExovanceWriteFailure ('IRQ affinity reset: ' + $_.Exception.Message); return $false }
+        try { Write-ExovanceSettingAccepted -DevicePath $registryPath -Setting 'AssignmentSetOverride удалён / DevicePolicy=0' -Value $null } catch { }; return $true
+    } catch { Add-ExovanceWriteFailure -DevicePath $registryPath -Setting 'Clear-DeviceAffinity' ('IRQ affinity reset: ' + $_.Exception.Message); return $false }
 }
 
 function Get-HIDDevicesWithUSBControllers {
@@ -40409,7 +40430,7 @@ function Get-NetworkAdapters {
         $ndisMedium = $mediaResolution.NdisMedium
         $ndisMediaSource = $mediaResolution.Source
 
-        & $writeLogLocal "Get-NetworkAdapters: '$adapterName' matched physical adapter"
+        & $writeLogLocal "Get-NetworkAdapters: '$adapterName' matched adapter candidate (physical identity is checked before writes)"
 
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$pnpDeviceId"
         $driver = $driverByRegPath[$regPath]
@@ -41993,6 +42014,7 @@ function Show-DarkMessageBox {
         [System.Windows.Forms.MessageBoxButtons]$Buttons = [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]$Icon = [System.Windows.Forms.MessageBoxIcon]::Information
     )
+    try { Write-ExovanceDialogLog -Icon $Icon -Title $Title -Message $Message } catch { }
 
     $padLeft        = 24
     $padRight       = 34
@@ -42646,6 +42668,8 @@ $__dtChrome = [DeviceTweakerFormFactory]::BuildStartupChrome(
 )
 $__dtHeader = $__dtChrome.Header
 $script:ExovanceFeedbackItem = $__dtHeader.Feedback
+$script:ExovanceLogBadge = $__dtHeader.Logs
+$lnkLogs = $__dtHeader.Logs
 $lblTitlePart1 = $__dtHeader.TitlePrefix
 $lnkTitlePart2 = $__dtHeader.Author
 $lblSecretTweak = $__dtHeader.SecretTweakPrefix
@@ -42683,7 +42707,16 @@ $__dtChrome = $null
 
 $lnkService.Add_LinkClicked({ Start-Process -FilePath (Join-Path $script:cachedScriptDir 'README.md') })
 $lnkGuides.Add_LinkClicked({ Start-Process -FilePath (Join-Path $script:cachedScriptDir 'CREDITS.md') })
-$linkLabels = @($lnkService, $lnkGuides)
+$lnkLogs.Add_LinkClicked({
+    if ($null -eq $script:ExovanceLogSession) {
+        Show-DarkMessageBox -Message 'Журнал отключён или не был создан. Проверь сообщения консоли.' -Title 'Логи Exovance' -Icon Information
+        return
+    }
+    Save-ExovanceLogReport
+    try { Invoke-Item -LiteralPath $script:ExovanceLogSession.ReportPath -ErrorAction Stop }
+    catch { Show-DarkMessageBox -Message ('Не удалось открыть отчёт: '+$_.Exception.Message) -Title 'Логи Exovance' -Icon Error }
+})
+$linkLabels = @($lnkService, $lnkGuides, $lnkLogs)
 [ExovanceInteractionState]::add_SelectionChanged({
     if (-not $script:deviceTweakerBusy) { Set-ExovanceUiFeedback -State Changed -Text 'Selection updated - review before applying' }
 })
@@ -63771,6 +63804,7 @@ $form.Add_Shown({
         Write-FunctionTimings
         Start-DeviceTweakerAsyncLogWriter
         Invoke-DeviceTweakerDeferredMechanicalDiscoveryAuditLog
+        Update-ExovanceDeviceLogSnapshot -Devices $deviceList -LogicalCount $script:cachedLogicalCount -PhysicalCount (Get-PhysicalCoreCount) -Discovery
 
         try {
             Start-AsyncIRQCountsRefresh
@@ -63790,6 +63824,7 @@ $form.Add_Shown({
 if ($script:CLIMode) {
     function Show-DarkMessageBox {
         param([string]$Message, [string]$Title, $Buttons, $Icon)
+        try { Write-ExovanceDialogLog -Icon $Icon -Title $Title -Message $Message } catch { }
         if ($Message -match 'backup.*before') {
             $answer = if ($script:CLIBackup) { 'Yes' } else { 'No' }
             Write-Host "[CLI] $Title - Backup? -> $answer" -ForegroundColor DarkGray
@@ -63809,6 +63844,7 @@ if ($script:CLIMode) {
 
     Start-DeviceTweakerAsyncLogWriter
     Invoke-DeviceTweakerDeferredMechanicalDiscoveryAuditLog
+    Update-ExovanceDeviceLogSnapshot -Devices $deviceList -LogicalCount $script:cachedLogicalCount -PhysicalCount (Get-PhysicalCoreCount) -Discovery
 
     try {
         if ($AutoOptimize) {
@@ -63823,6 +63859,7 @@ if ($script:CLIMode) {
         Write-Host '[CLI] Done. Exiting.' -ForegroundColor Green
     }
     catch {
+        Write-ExovanceLogEvent -Level Error -Code CliFatal -Stage Runtime -Message $_.Exception.ToString()
         Write-Host "[CLI] FATAL: $_" -ForegroundColor Red
         exit 1
     }
@@ -63834,6 +63871,7 @@ if ($script:CLIMode) {
         Write-FunctionTimings
         Stop-DeviceTweakerAsyncLogWriter -Wait
         Stop-DeviceTweakerDiscoveryPool
+        Close-ExovanceLogSession
         if ($form -and -not $form.IsDisposed) { $form.Dispose() }
     }
     exit 0
@@ -63843,6 +63881,9 @@ Start-DeviceTweakerStartupFirstPaintGate
 try {
     [ExovanceVisuals]::ApplyTo($form)
     [void]$form.ShowDialog()
+} catch {
+    Write-ExovanceLogEvent -Level Error -Code UiFatal -Stage Runtime -Message $_.Exception.ToString()
+    throw
 } finally {
     try { Complete-DeviceTweakerStartupFirstPaintGate } catch { Write-Host ("Startup first-paint gate cleanup failed: $_") -ForegroundColor Red }
     $script:uiShuttingDown = $true
@@ -63852,4 +63893,5 @@ try {
     try { if ($script:scrollState) { $script:scrollState.Dispose(); $script:scrollState = $null } } catch { throw [System.InvalidOperationException]::new(('Native scroll disposal failed during UI cleanup: ' + $_.Exception.Message), $_.Exception) }
     Stop-DeviceTweakerAsyncLogWriter -Wait
     Stop-DeviceTweakerDiscoveryPool
+    Close-ExovanceLogSession
 }
