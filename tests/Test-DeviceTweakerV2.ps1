@@ -227,6 +227,7 @@ Test-Case 'original source is unchanged and v2 never ships another PCs backup/lo
 }
 Test-Case 'branding, companion separation and full RSS backup are wired into the app' {
     Assert-True ($source.Contains('EXOVANCE') -and $source.Contains('ALTERNATE PLAN')) 'New branding missing.'
+    Assert-True (-not $source.Contains('"LLG"')) 'Legacy dialog monogram remains.'
     Assert-True (-not ($source -match 'boosty\.to|BEYOND PERFORMANCE|BYND_PERF|SECRET-TWEAK -')) 'Promotional header remains.'
     Assert-True (-not $source.Contains('forceGpuLogical8And10') -and -not $source.Contains('Test-GpuLogical8And10Override')) 'Fixed GPU CPU numbers remain.'
     Assert-True (-not $source.Contains('Enable-HardwareAcceleratedGpuScheduling')) 'Alternate Plan still forces HAGS.'

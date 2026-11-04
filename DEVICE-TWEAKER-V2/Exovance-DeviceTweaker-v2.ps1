@@ -42021,7 +42021,7 @@ function Show-DarkMessageBox {
     $sepColor     = $script:colDarkGray50
     $btnDownColor = $script:colDarkGray60
 
-    $iconText = "LLG"; $iconFontObj = $script:fontCache22
+    $iconText = "EXO"; $iconFontObj = $script:fontCache22
     $iconLabelW = 44; $iconLabelH = 38
     switch ($Icon) {
         ([System.Windows.Forms.MessageBoxIcon]::Error) {
@@ -42040,7 +42040,7 @@ function Show-DarkMessageBox {
             $iconLabelW = 34; $iconLabelH = 38
         }
         default {
-            $iconText = "LLG"
+            $iconText = "EXO"
             $iconFontObj = $script:fontCache22
             $iconLabelW = 75; $iconLabelH = 40
         }

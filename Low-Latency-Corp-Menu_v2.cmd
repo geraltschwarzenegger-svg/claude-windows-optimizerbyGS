@@ -10562,11 +10562,11 @@ function Write-QolExplorerOnlyTaskbarLayoutForProfilePath {
 function Write-QolExplorerOnlyTaskbarLayoutSystemFiles {
     $layoutXml = Get-QolExplorerOnlyTaskbarLayoutXml
     $failed = 0
-    $policyPath = Join-Path $env:ProgramData 'LowLatencyCorp\Taskbar\ExplorerOnlyTaskbarLayout.xml'
+    $policyPath = Join-Path $env:ProgramData 'Exovance\Taskbar\ExplorerOnlyTaskbarLayout.xml'
 
     $targets = New-Object System.Collections.ArrayList
     [void]$targets.Add($policyPath)
-    [void]$targets.Add((Join-Path $env:ProgramData 'LowLatencyCorp\Taskbar\TaskbarLayoutModification.xml'))
+    [void]$targets.Add((Join-Path $env:ProgramData 'Exovance\Taskbar\TaskbarLayoutModification.xml'))
 
     $windowsDirectory = $env:WINDIR
     if ([string]::IsNullOrWhiteSpace($windowsDirectory)) { $windowsDirectory = Join-Path $env:SystemDrive 'Windows' }
@@ -12448,7 +12448,7 @@ function Invoke-QolDisableOneDriveStartupShortcuts {
             $files = @(Get-ChildItem -LiteralPath $folder -File -Force -ErrorAction SilentlyContinue | Where-Object { Test-QolStartupFileIsOneDrive -File $_ })
             foreach ($file in @($files)) {
                 $found++
-                $disabledFolder = Join-Path $folder 'LowLatencyCorp_Disabled_Startup'
+                $disabledFolder = Join-Path $folder 'Exovance_Disabled_Startup'
                 try {
                     if (-not (Test-Path -LiteralPath $disabledFolder -PathType Container)) {
                         New-Item -Path $disabledFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
