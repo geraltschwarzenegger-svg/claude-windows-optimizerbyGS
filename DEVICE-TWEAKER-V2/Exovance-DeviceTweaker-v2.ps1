@@ -29421,7 +29421,7 @@ public static class DeviceTopologyNative
     }
 
     if (-not (Test-DeviceTweakerMergedTypesAvailable)) {
-        Add-Type -TypeDefinition $typeDefinition -ReferencedAssemblies $referencedAssemblies -ErrorAction SilentlyContinue
+        Add-Type -TypeDefinition $typeDefinition -ReferencedAssemblies $referencedAssemblies -ErrorAction Stop
     }
 }
 

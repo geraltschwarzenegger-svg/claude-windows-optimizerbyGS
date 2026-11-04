@@ -5,7 +5,16 @@ $folder = Join-Path $repo 'DEVICE-TWEAKER-V2'
 . (Join-Path $folder 'Exovance.Core.ps1')
 $script:Passed = 0
 function Assert-True { param([bool]$Condition, [string]$Message) if (-not $Condition) { throw $Message } }
-function Test-Case { param([string]$Name, [scriptblock]$Body) & $Body; $script:Passed++; Write-Host ('PASS: ' + $Name) }
+function Test-Case {
+    param([string]$Name, [scriptblock]$Body)
+    try { & $Body; $script:Passed++; Write-Host ('PASS: ' + $Name) }
+    catch {
+        $detail=($_.Exception.Message -replace '[\r\n]+',' ')
+        Write-Host ('::error title={0}::{1}' -f $Name,$detail)
+        if($env:GITHUB_STEP_SUMMARY){@('### '+$Name,'```text',$_.ToString(),$_.ScriptStackTrace,'```') | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append}
+        throw
+    }
+}
 function Assert-Throws { param([scriptblock]$Body) $caught=$false; try { & $Body } catch {$caught=$true}; Assert-True $caught 'Expected exception.' }
 $t=$null; $e=$null
 $app = [Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Exovance-DeviceTweaker-v2.ps1'),[ref]$t,[ref]$e)
