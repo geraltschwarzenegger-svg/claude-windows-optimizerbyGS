@@ -42,6 +42,9 @@ jobs:
       - name: Check Exovance selection styling and honest action feedback
         shell: pwsh
         run: ./tests/Test-DeviceTweakerUI.ps1
+      - name: Check session reports, registry diffs and diagnostic failures
+        shell: pwsh
+        run: ./tests/Test-DeviceLogs.ps1
   windows:
     name: Windows / Windows PowerShell 5.1
     runs-on: windows-latest
@@ -75,3 +78,6 @@ jobs:
       - name: Check Exovance theme contrast and action states
         shell: powershell
         run: ./tests/Test-DeviceTweakerUI.ps1
+      - name: Check session reports, registry diffs and diagnostic failures
+        shell: powershell
+        run: ./tests/Test-DeviceLogs.ps1
