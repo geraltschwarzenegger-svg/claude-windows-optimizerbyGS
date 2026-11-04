@@ -1,0 +1,6 @@
+exovance_v2_device_settings_backup.json
+logs/
+.device-tweaker-typecache/
+*.cfg
+*.dll
+*.pdb

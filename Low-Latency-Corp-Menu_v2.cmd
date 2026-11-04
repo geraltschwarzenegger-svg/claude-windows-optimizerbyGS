@@ -107,6 +107,7 @@ function Get-LlcPreflightResult {
         ResourcesPresent = (Test-Path -LiteralPath $resourcesPath -PathType Container)
         ResourcesPath = $resourcesPath
         BundledDeviceTweakerPresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat') -PathType Leaf)
+        BundledExovancePresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'DEVICE-TWEAKER-V2\RUN-EXOVANCE-V2.bat') -PathType Leaf)
         BundledPowerPlanPresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'POWER-PLAN\LLC-CERTIFIED.pow') -PathType Leaf)
     }
 }
@@ -125,6 +126,7 @@ function Write-LlcPreflightReport {
         Write-Host 'Other Apps, local driver installers and .nip import require additional files.' -ForegroundColor Yellow
     }
     Write-Host ('Bundled Device Tweaker launcher present: ' + $Result.BundledDeviceTweakerPresent)
+    Write-Host ('Exovance Device Tweaker v2 launcher present: ' + $Result.BundledExovancePresent)
     Write-Host ('Bundled power plan present: ' + $Result.BundledPowerPlanPresent)
     Write-Host 'File presence does not verify authenticity or compatibility.' -ForegroundColor Yellow
     Write-Host 'This is a host and syntax check, not a dry run or a compatibility test of every tweak.'
@@ -12913,7 +12915,7 @@ while ($true) {
         'apps' {
             while ($true) {
                 $apps = Invoke-Menu -Title 'Apps' -Items @(
-                    'Device Tweaker',
+                    'Exovance Device Tweaker v2',
                     'Windows Defender Switcher',
                     'Windows Update Blocker',
                     'NVIDIA Profile Inspector Revamped',
@@ -12927,12 +12929,15 @@ while ($true) {
 
                 if ($apps -eq 0) {
                     while ($true) {
-                        $sub = Invoke-Menu -Title 'Device Tweaker' -Items @(
-                            'Launch DT',
+                        $sub = Invoke-Menu -Title 'Exovance Device Tweaker v2' -Items @(
+                            'Launch Exovance v2',
+                            'Launch original Device Tweaker',
                             'Back'
                         )
 
                         if ($sub -eq 0) {
+                            Invoke-ExternalBatchLauncher -Title 'Exovance Device Tweaker v2' -RelativePath 'DEVICE-TWEAKER-V2\RUN-EXOVANCE-V2.bat'
+                        } elseif ($sub -eq 1) {
                             Invoke-ExternalBatchLauncher -Title 'Device Tweaker - Launch DT' -RelativePath 'Resources\DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat'
                         } else {
                             break

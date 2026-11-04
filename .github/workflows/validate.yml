@@ -36,6 +36,12 @@ jobs:
             @('### Menu test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             throw
           }
+      - name: Check Exovance Device Tweaker v2 without applying system settings
+        shell: pwsh
+        run: ./tests/Test-DeviceTweakerV2.ps1
+      - name: Check Exovance selection styling and honest action feedback
+        shell: pwsh
+        run: ./tests/Test-DeviceTweakerUI.ps1
   windows:
     name: Windows / Windows PowerShell 5.1
     runs-on: windows-latest
@@ -63,3 +69,9 @@ jobs:
             @('### Menu test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             throw
           }
+      - name: Check Exovance v2 logic and compile its WinForms UI
+        shell: powershell
+        run: ./tests/Test-DeviceTweakerV2.ps1
+      - name: Check Exovance theme contrast and action states
+        shell: powershell
+        run: ./tests/Test-DeviceTweakerUI.ps1

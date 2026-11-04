@@ -1,3 +1,6 @@
 # Keep the original CMD byte-for-byte and preserve the v2 Windows CRLF payload.
 Low-Latency-Corp-Menu_SPI_24H2_VisualizationFix.cmd -text
 Low-Latency-Corp-Menu_v2.cmd -text whitespace=cr-at-eol
+
+# Preserve the standalone Windows launcher CRLF bytes.
+DEVICE-TWEAKER-V2/RUN-EXOVANCE-V2.bat -text whitespace=cr-at-eol
