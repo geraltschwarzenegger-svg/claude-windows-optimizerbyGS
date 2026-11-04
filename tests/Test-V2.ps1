@@ -95,7 +95,7 @@ function New-ResourceFixtureFile {
     [IO.File]::WriteAllText($Path, 'fixture only')
 }
 
-Test-Case 'power plan gets the Exovance name even if already active; rename failure is reported' {
+Test-Case 'power plan gets the Exovance name and description even if already active; rename failure is reported' {
     $fn=$asts.v2.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Enable-LlcCertifiedPowerPlan'},$true)
     . ([scriptblock]::Create($fn.Extent.Text))
     $guid='8b24b027-1dee-4c65-8f35-5d5d91e51d87'
@@ -105,13 +105,13 @@ Test-Case 'power plan gets the Exovance name even if already active; rename fail
     function Write-StatusLine { param($Ok,$Text) }
     function Invoke-NativeCommandCaptured {
         param($FilePath,$ArgumentList)
-        Assert-True ($FilePath -eq 'powercfg.exe' -and ($ArgumentList -join '|') -eq ('/changename|'+$guid+'|Exovance v2')) 'Unexpected power operation.'
+        Assert-True ($FilePath -eq 'powercfg.exe' -and ($ArgumentList -join '|') -eq ('/changename|'+$guid+'|Exovance v2|Made by Exovance')) 'Unexpected power operation.'
         $script:RenameCalls++
         return [pscustomobject]@{ExitCode=$script:RenameExit;Output='fixture'}
     }
     $script:RenameCalls=0; $script:RenameExit=0
     Assert-True (Enable-LlcCertifiedPowerPlan 'unused.pow' $guid) 'Existing active plan failed.'
-    Assert-True ($script:RenameCalls -eq 1) 'Already-active plan retained old name.'
+    Assert-True ($script:RenameCalls -eq 1) 'Already-active plan retained old name/description.'
     $script:RenameExit=5
     Assert-True (-not (Enable-LlcCertifiedPowerPlan 'unused.pow' $guid)) 'Rename failure reported success.'
 }

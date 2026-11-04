@@ -530,7 +530,7 @@ function Get-LlcMenuHelp {
             $effect='Import and Activate импортирует POWER-PLAN\EXOVANCE.pow и активирует Exovance v2 через powercfg.'
             $where='Управление через powercfg; GUID схемы: 8b24b027-1dee-4c65-8f35-5d5d91e51d87.'
             $advice='Сначала сохрани GUID текущей схемы: powercfg /getactivescheme. На ноутбуке проверь нагрев и батарею.'
-            $details=@('Схема применяется командой powercfg, а не одним значением реестра. Вернуться к прежней можно через powercfg /setactive <GUID>.','Текущая функция задаёт импортированной схеме имя Exovance v2. Её эффекты определяются содержимым файла .pow.')
+            $details=@('Схема применяется командой powercfg, а не одним значением реестра. Вернуться к прежней можно через powercfg /setactive <GUID>.','Схема получает имя Exovance v2 и описание Made by Exovance, включая уже установленную схему. Её эффекты определяются содержимым файла .pow.')
         }
         'activateWindows' {
             $summary='Запуск отдельного файла активации Windows из Resources.'
@@ -2886,9 +2886,9 @@ function Enable-LlcCertifiedPowerPlan {
         }
     }
 
-    $renameResult = Invoke-NativeCommandCaptured -FilePath 'powercfg.exe' -ArgumentList @('/changename', $SchemeGuid, 'Exovance v2')
+    $renameResult = Invoke-NativeCommandCaptured -FilePath 'powercfg.exe' -ArgumentList @('/changename', $SchemeGuid, 'Exovance v2', 'Made by Exovance')
     if ($renameResult.ExitCode -ne 0) {
-        Write-StatusLine -Ok $false -Text ('Could not name power plan Exovance v2: ' + (Convert-NativeCommandOutputToText -Output $renameResult.Output))
+        Write-StatusLine -Ok $false -Text ('Could not update power plan name/description: ' + (Convert-NativeCommandOutputToText -Output $renameResult.Output))
         return $false
     }
 
