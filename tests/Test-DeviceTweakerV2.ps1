@@ -5,7 +5,16 @@ $folder = Join-Path $repo 'DEVICE-TWEAKER-V2'
 . (Join-Path $folder 'Exovance.Core.ps1')
 $script:Passed = 0
 function Assert-True { param([bool]$Condition, [string]$Message) if (-not $Condition) { throw $Message } }
-function Test-Case { param([string]$Name, [scriptblock]$Body) & $Body; $script:Passed++; Write-Host ('PASS: ' + $Name) }
+function Test-Case {
+    param([string]$Name, [scriptblock]$Body)
+    try { & $Body; $script:Passed++; Write-Host ('PASS: ' + $Name) }
+    catch {
+        $detail=($_.Exception.Message -replace '[\r\n]+',' ')
+        Write-Host ('::error title={0}::{1}' -f $Name,$detail)
+        if($env:GITHUB_STEP_SUMMARY){@('### '+$Name,'```text',$_.ToString(),$_.ScriptStackTrace,'```') | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append}
+        throw
+    }
+}
 function Assert-Throws { param([scriptblock]$Body) $caught=$false; try { & $Body } catch {$caught=$true}; Assert-True $caught 'Expected exception.' }
 $t=$null; $e=$null
 $app = [Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Exovance-DeviceTweaker-v2.ps1'),[ref]$t,[ref]$e)
@@ -128,7 +137,15 @@ Test-Case 'RSS backup roundtrip preserves types, values and absence through JSON
         $script:Values['*NumaNodeId']=[pscustomobject]@{Name='*NumaNodeId';Present=$true;Kind='String';Value='-1'}
         $snapshot=@(Get-ExovanceRssSnapshot 'HKLM:\FAKE')
         $json=ConvertTo-Json -InputObject $snapshot -Depth 8
-        $restored=@(ConvertFrom-Json -InputObject $json)
+        # WinPS 5.1 emits a top-level JSON array as one pipeline object;
+        # PS 7 enumerates it. Direct assignment preserves its seven entries in both.
+        $restored=ConvertFrom-Json -InputObject $json
+        Assert-True ($restored.Count -eq 7) 'Top-level JSON lost RSS entries.'
+        # Exercise the application's actual nested Devices/ExovanceRss schema too.
+        $documentJson=ConvertTo-Json -InputObject ([pscustomobject]@{Devices=@([pscustomobject]@{ExovanceRss=$snapshot})}) -Depth 10
+        $document=ConvertFrom-Json -InputObject $documentJson
+        $restored=@($document.Devices[0].ExovanceRss)
+        Assert-True ($restored.Count -eq 7) 'Full backup JSON lost RSS entries.'
         $null=Set-ExovanceRssConfiguration 'HKLM:\FAKE' 4 2
         Restore-ExovanceRssSnapshot 'HKLM:\FAKE' $restored
         Assert-True ($script:Values.Count -eq 2) 'Previously absent values were not removed.'
@@ -196,7 +213,9 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
                 Copy-Item -LiteralPath (Join-Path $folder $file) -Destination $fixture
             }
             $launcher=Join-Path $fixture 'RUN-EXOVANCE-V2.bat'
-            $output=@(& $env:ComSpec /d /c ('""{0}" /check"' -f $launcher) 2>&1)
+            # Match Invoke-ExternalBatchLauncher: PowerShell handles BAT paths
+            # with spaces directly; an extra cmd /c layer double-quotes on WinPS.
+            $output=@(& $launcher /check 2>&1)
             Assert-True ($LASTEXITCODE -eq 0) ('Launcher check failed: '+($output -join "`n"))
             Assert-True (($output -join "`n").Contains('PASS: Exovance v2 syntax')) 'No check result.'
             Assert-True (-not (Test-Path (Join-Path $fixture 'logs'))) 'Check initialized application logs.'
@@ -218,12 +237,12 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         $grid.Size=New-Object System.Drawing.Size(700,210)
         try {
             $method=$grid.GetType().GetMethod('OnKeyDown',[Reflection.BindingFlags]'Instance,NonPublic')
-            $null=$method.Invoke($grid,@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::End))))
-            $null=$method.Invoke($grid,@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
+            $null=$method.Invoke($grid,[System.Windows.Forms.KeyEventArgs[]]@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::End))))
+            $null=$method.Invoke($grid,[System.Windows.Forms.KeyEventArgs[]]@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
             Assert-True ($grid.Mask -eq [Convert]::ToUInt64('8000000000000000',16)) 'Keyboard lost bit 63.'
             # Shrinking a dynamically rebuilt grid must reset its keyboard focus index.
             $grid.LogicalCount=16
-            $null=$method.Invoke($grid,@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
+            $null=$method.Invoke($grid,[System.Windows.Forms.KeyEventArgs[]]@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
             Assert-True ($grid.GetCpuChecked(15) -and $grid.Mask -eq 32768) 'Focus or mask was not clamped after topology change.'
             $grid.Mask=1
             $bitmap=New-Object System.Drawing.Bitmap($grid.Width,$grid.Height)
