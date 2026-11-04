@@ -272,7 +272,12 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         . ([scriptblock]::Create($fn.Extent.Text))
         function Enter-DeviceTweakerUiAction { param($Name,$Button) return $true }
         function Exit-DeviceTweakerUiAction { $script:Exited++ }
-        function Show-DarkMessageBox { param($Message,$Title,$Buttons,$Icon) $script:Prompts++; return [System.Windows.Forms.DialogResult]::No }
+        function Show-DarkMessageBox {
+            param($Message,$Title,$Buttons,$Icon)
+            $script:Prompts++
+            if ($Buttons -eq 'YesNo') { return [System.Windows.Forms.DialogResult]::Yes }
+            return [System.Windows.Forms.DialogResult]::No
+        }
         function Show-NdisAffinityModeDialog {
             param($Title,$Prompt,$InitialMode,$Owner)
             Assert-True ($deviceList.Count -eq 1 -and $deviceList[0].PNPID -like 'PCI*') 'Virtual NIC reached mode dialog.'
@@ -293,7 +298,8 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
             Assert-True ($handlers.Count -eq 1) ('Missing real handler: '+$buttonName)
             $body=$handlers[0].Arguments[0].ScriptBlock.Extent.Text
             & ([scriptblock]::Create($body.Substring(1,$body.Length-2))) 6>$null
-            Assert-True ($script:Prompts -eq 2 -and $script:ModePrompts -eq 1 -and $script:Exited -eq 1) 'Cancelled handler continued or skipped finally.'
+            $expectedPrompts = if ($buttonName -eq '$btnSecretOpt') { 3 } else { 2 }
+            Assert-True ($script:Prompts -eq $expectedPrompts -and $script:ModePrompts -eq 1 -and $script:Exited -eq 1) 'Cancelled handler continued or skipped finally.'
             Assert-True ($script:ExovanceUiState -eq 'Ready') 'Cancelled action reported applied.'
             Assert-True ($deviceList.Count -eq 2) 'Handler removed VPN from the backup/restore list.'
         }
