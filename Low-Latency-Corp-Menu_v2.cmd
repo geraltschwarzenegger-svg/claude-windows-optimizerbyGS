@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title Low Latency Corp Menu v2
+title Exovance Optimizer v2
 set "LLC_RUN_CHECK="
 set "LLC_MENU_DEMO="
 set "LLC_MENU_SNAPSHOT="
@@ -25,7 +25,7 @@ goto llcArgsReady
 echo Unknown arguments. Use /check, /demo, /demo /snapshot or /help.
 exit /b 2
 :llcHelp
-echo Low Latency Corp Menu v2
+echo Exovance Optimizer v2
 echo   No arguments: open the interactive menu as Administrator.
 echo   /check      : check payload syntax and basic host prerequisites only.
 echo                 No administrator rights required. No tweaks applied.
@@ -38,7 +38,7 @@ exit /b 0
 :llcArgsReady
 set "THIS=%~f0"
 set "PSPAYLOAD=%TEMP%\Windows_Tweaks_Menu_%RANDOM%_%RANDOM%.ps1"
-set "LLC_MENU_DEBUG_LOG=%TEMP%\LowLatencyCorpMenu_Debug_%RANDOM%_%RANDOM%.log"
+set "LLC_MENU_DEBUG_LOG=%TEMP%\ExovanceMenu_Debug_%RANDOM%_%RANDOM%.log"
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $src=$env:THIS; $out=$env:PSPAYLOAD; $marker='### POWERSHELL STARTS HERE ###'; $lines=Get-Content -LiteralPath $src; $i=[Array]::IndexOf($lines,$marker); if($i -lt 0){ throw 'PowerShell payload marker not found.' }; $lines[($i+1)..($lines.Count-1)] | Set-Content -LiteralPath $out -Encoding UTF8"
 if errorlevel 1 (
@@ -108,13 +108,13 @@ function Get-LlcPreflightResult {
         ResourcesPath = $resourcesPath
         BundledDeviceTweakerPresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat') -PathType Leaf)
         BundledExovancePresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'DEVICE-TWEAKER-V2\RUN-EXOVANCE-V2.bat') -PathType Leaf)
-        BundledPowerPlanPresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'POWER-PLAN\LLC-CERTIFIED.pow') -PathType Leaf)
+        BundledPowerPlanPresent = (Test-Path -LiteralPath (Join-Path $sourceDirectory 'POWER-PLAN\EXOVANCE.pow') -PathType Leaf)
     }
 }
 
 function Write-LlcPreflightReport {
     param([Parameter(Mandatory=$true)][object]$Result)
-    Write-Host 'Low Latency Corp Menu v2 - preflight' -ForegroundColor Cyan
+    Write-Host 'Exovance Optimizer v2 - preflight' -ForegroundColor Cyan
     Write-Host ('PowerShell: {0} ({1}); 64-bit process: {2}' -f $Result.HostVersion, $Result.HostEdition, $Result.Is64Bit)
     foreach ($issue in $Result.Issues) { Write-Host ('FAIL: ' + $issue) -ForegroundColor Red }
     if ($Result.Ready) { Write-Host 'PASS: basic host prerequisites.' -ForegroundColor Green }
@@ -279,7 +279,7 @@ function Get-LlcMenuFrame {
         if ($selectedPosition -lt $top) { $top = $selectedPosition }
         if ($selectedPosition -ge ($top + $rows)) { $top = $selectedPosition - $rows + 1 }
     }
-    $lines.Add((Format-LlcMenuText -Text ' LOW LATENCY  /  by GS                         v2  PREVIEW 3' -Width $lineWidth -Pad)); $styles.Add('brand')
+    $lines.Add((Format-LlcMenuText -Text ' EXOVANCE  /  WINDOWS OPTIMIZER                 v2  PREVIEW 4' -Width $lineWidth -Pad)); $styles.Add('brand')
     $lines.Add((Format-LlcMenuText -Text (' ' + $Title) -Width $lineWidth -Pad)); $styles.Add('title')
     $divider = ' ' + (([char]0x2500).ToString() * [Math]::Max(0, $lineWidth - 2))
     $lines.Add((Format-LlcMenuText -Text $divider -Width $lineWidth -Pad)); $styles.Add('border')
@@ -511,7 +511,7 @@ if (-not $llcPreflight.Ready) {
 $ErrorActionPreference = 'Stop'
 $script:LowLatencyDebugLog = $env:LLC_MENU_DEBUG_LOG
 if ([string]::IsNullOrWhiteSpace($script:LowLatencyDebugLog)) {
-    $script:LowLatencyDebugLog = Join-Path ([IO.Path]::GetTempPath()) ("LowLatencyCorpMenu_Debug_{0:yyyyMMdd_HHmmss}_{1}.log" -f (Get-Date), $PID)
+    $script:LowLatencyDebugLog = Join-Path ([IO.Path]::GetTempPath()) ("ExovanceMenu_Debug_{0:yyyyMMdd_HHmmss}_{1}.log" -f (Get-Date), $PID)
 }
 try {
     Start-Transcript -LiteralPath $script:LowLatencyDebugLog -Append -Force | Out-Null
@@ -2358,7 +2358,7 @@ function Resolve-ScriptResourcePath {
     # Resources\ remains preferred; do not redirect arbitrary external tools.
     $bundledPaths = @{
         'Resources\DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat' = 'DEVICE-TWEAKER\RUN-DEVICE-TWEAKER.bat'
-        'Resources\POWER-PLAN\LLC-CERTIFIED.pow' = 'POWER-PLAN\LLC-CERTIFIED.pow'
+        'Resources\POWER-PLAN\EXOVANCE.pow' = 'POWER-PLAN\EXOVANCE.pow'
     }
     $lookupPath = $RelativePath.Replace('/', '\')
     if ($bundledPaths.ContainsKey($lookupPath)) {
@@ -2448,6 +2448,12 @@ function Enable-LlcCertifiedPowerPlan {
         }
     }
 
+    $renameResult = Invoke-NativeCommandCaptured -FilePath 'powercfg.exe' -ArgumentList @('/changename', $SchemeGuid, 'Exovance v2')
+    if ($renameResult.ExitCode -ne 0) {
+        Write-StatusLine -Ok $false -Text ('Could not name power plan Exovance v2: ' + (Convert-NativeCommandOutputToText -Output $renameResult.Output))
+        return $false
+    }
+
     $activeSchemeGuid = Get-ActivePowerSchemeGuid
     if ($activeSchemeGuid -ieq $schemeGuidNormalized) {
         Write-StatusLine -Ok $true -Text 'power plan already present and active'
@@ -2480,7 +2486,7 @@ function Invoke-PowerPlanImportAndActivate {
     Write-BoxTitle -Title 'Power Plan - Import and Activate'
     Write-Host ""
 
-    $powerPlanPath = Resolve-ScriptResourcePath -RelativePath 'Resources\POWER-PLAN\LLC-CERTIFIED.pow'
+    $powerPlanPath = Resolve-ScriptResourcePath -RelativePath 'Resources\POWER-PLAN\EXOVANCE.pow'
     $schemeGuid = '8b24b027-1dee-4c65-8f35-5d5d91e51d87'
 
     if (Test-Path -LiteralPath $powerPlanPath -PathType Leaf) {
@@ -9437,7 +9443,7 @@ function Invoke-PowerPlanImportAndActivateAuto {
     Write-BoxTitle -Title 'Power Plan - Import and Activate'
     Write-Host ''
 
-    $powerPlanPath = Resolve-ScriptResourcePath -RelativePath 'Resources\POWER-PLAN\LLC-CERTIFIED.pow'
+    $powerPlanPath = Resolve-ScriptResourcePath -RelativePath 'Resources\POWER-PLAN\EXOVANCE.pow'
     $schemeGuid = '8b24b027-1dee-4c65-8f35-5d5d91e51d87'
 
     if (Test-Path -LiteralPath $powerPlanPath -PathType Leaf) {
@@ -10556,11 +10562,11 @@ function Write-QolExplorerOnlyTaskbarLayoutForProfilePath {
 function Write-QolExplorerOnlyTaskbarLayoutSystemFiles {
     $layoutXml = Get-QolExplorerOnlyTaskbarLayoutXml
     $failed = 0
-    $policyPath = Join-Path $env:ProgramData 'LowLatencyCorp\Taskbar\ExplorerOnlyTaskbarLayout.xml'
+    $policyPath = Join-Path $env:ProgramData 'Exovance\Taskbar\ExplorerOnlyTaskbarLayout.xml'
 
     $targets = New-Object System.Collections.ArrayList
     [void]$targets.Add($policyPath)
-    [void]$targets.Add((Join-Path $env:ProgramData 'LowLatencyCorp\Taskbar\TaskbarLayoutModification.xml'))
+    [void]$targets.Add((Join-Path $env:ProgramData 'Exovance\Taskbar\TaskbarLayoutModification.xml'))
 
     $windowsDirectory = $env:WINDIR
     if ([string]::IsNullOrWhiteSpace($windowsDirectory)) { $windowsDirectory = Join-Path $env:SystemDrive 'Windows' }
@@ -12442,7 +12448,7 @@ function Invoke-QolDisableOneDriveStartupShortcuts {
             $files = @(Get-ChildItem -LiteralPath $folder -File -Force -ErrorAction SilentlyContinue | Where-Object { Test-QolStartupFileIsOneDrive -File $_ })
             foreach ($file in @($files)) {
                 $found++
-                $disabledFolder = Join-Path $folder 'LowLatencyCorp_Disabled_Startup'
+                $disabledFolder = Join-Path $folder 'Exovance_Disabled_Startup'
                 try {
                     if (-not (Test-Path -LiteralPath $disabledFolder -PathType Container)) {
                         New-Item -Path $disabledFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
@@ -12710,7 +12716,7 @@ try {
 
 while ($true) {
     $mainMenuItems = @(Get-LlcMainMenuItems -GpuText (Get-DetectedGpuMenuEntryText -Base 'GPU') -DriverText (Get-DetectedGpuMenuEntryText -Base 'Drivers') -MmcssText (Get-DetectedNetworkAdapterMenuEntryText -Base 'MMCSS'))
-    $choice = Invoke-Menu -Title 'Low Latency Corp Menu v2' -Items $mainMenuItems
+    $choice = Invoke-Menu -Title 'Exovance Optimizer v2' -Items $mainMenuItems
 
     switch ($choice) {
         'preflight' {

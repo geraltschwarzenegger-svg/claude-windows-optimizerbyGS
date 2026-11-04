@@ -1,4 +1,4 @@
-# No GUI or system tweaks. Extract actual app functions; mock only registry I/O.
+﻿# No GUI or system tweaks. Extract actual app functions; mock only registry I/O.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $folder = Join-Path $repo 'DEVICE-TWEAKER-V2'
@@ -59,6 +59,43 @@ Test-Case 'RSS rejects overflow, missing processors and empty queue selection be
     Assert-Throws { Get-ExovanceRssPlan 0 1 65 @{} }
     $last = Get-ExovanceRssPlan 63 1 64 @{}
     Assert-True ($last.MaxProcessor -eq 63) 'Last valid processor rejected.'
+}
+
+Test-Case 'Happ Wintun and unknown or non-PCI NICs cannot enter any write plan' {
+    $physical=[pscustomobject]@{Category='Network';Role='NetAdapterCx';DisplayName='Realtek RTL8111';ConfigPath='HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_10EC&DEV_8168\123'}
+    $vpn=[pscustomobject]@{Category='Network';Role='NDIS';DisplayName='Happ Tunnel';ConfigPath='HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\SWD\WINTUN\123'}
+    $gpu=[pscustomobject]@{Category='PCI';Role='GPU';DisplayName='RTX 4060'}
+    Assert-True (Test-ExovanceNetworkWritable $physical) 'Physical NetAdapterCx rejected.'
+    Assert-True (-not (Test-ExovanceNetworkWritable $vpn)) 'Wintun accepted.'
+    foreach($path in @('ROOT\NET\0001','VMBUS\123','USB\VID_1234&PID_1234\1','')) {
+        $unknown=[pscustomobject]@{Category='Network';DisplayName='Realtek RTL8111';PNPID=$path}
+        Assert-True (-not (Test-ExovanceNetworkWritable $unknown)) ('Name spoof accepted: '+$path)
+    }
+    $conflict=[pscustomobject]@{Category='Network';PNPID='PCI\VEN_10EC&DEV_8168\123';ConfigPath=$vpn.ConfigPath}
+    Assert-True (-not (Test-ExovanceNetworkWritable $conflict)) 'Conflicting virtual path accepted.'
+    $explicitVirtual=[pscustomobject]@{Category='Network';PNPID='PCI\VEN_10EC&DEV_8168\123';HardwareInterface=$false}
+    Assert-True (-not (Test-ExovanceNetworkWritable $explicitVirtual)) 'Explicit software interface accepted.'
+    $plan=@(Get-ExovanceWritableDevices @($physical,$vpn,$gpu) 6>$null)
+    Assert-True ($plan.Count -eq 2 -and $plan -contains $physical -and $plan -contains $gpu -and $plan -notcontains $vpn) 'Write plan contains virtual NIC or loses GPU.'
+}
+Test-Case 'NDIS mode requires an explicit choice; close, Escape and stale selections cancel' {
+    foreach($result in @('Cancel','None','Abort','')) {
+        Assert-True ($null -eq (Resolve-ExovanceNdisMode $result 'BOTH')) 'Closing dialog retained stale mode.'
+    }
+    foreach($mode in @('RSS','IRQ','BOTH')) {
+        Assert-True ((Resolve-ExovanceNdisMode OK $mode) -eq $mode) 'Explicit choice lost.'
+    }
+    Assert-True ($null -eq (Resolve-ExovanceNdisMode OK '')) 'Missing choice accepted.'
+}
+Test-Case 'virtual-only NDIS does not request an affinity mode' {
+    $fn=$app.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-ShouldShowNdisAffinityModeDialog'},$true)
+    . ([scriptblock]::Create($fn.Extent.Text))
+    $script:CLIMode=$false; $script:forceNetAdapterCx=$false; $script:forceNDIS=$false
+    $vpn=[pscustomobject]@{Category='Network';Role='NDIS';ConfigPath='HKLM:\SYSTEM\CurrentControlSet\Enum\SWD\WINTUN\123'}
+    $nic=[pscustomobject]@{Category='Network';Role='NetAdapterCx';PNPID='PCI\VEN_10EC&DEV_8168\123'}
+    Assert-True (-not (Test-ShouldShowNdisAffinityModeDialog @($vpn,$nic))) 'VPN triggered NDIS dialog.'
+    $nic.Role='NDIS'
+    Assert-True (Test-ShouldShowNdisAffinityModeDialog @($vpn,$nic)) 'Physical NDIS missing dialog.'
 }
 
 # Mock boundary keeps real plan, snapshot, rollback, and app affinity functions intact.
@@ -190,7 +227,9 @@ Test-Case 'original source is unchanged and v2 never ships another PCs backup/lo
 }
 Test-Case 'branding, companion separation and full RSS backup are wired into the app' {
     Assert-True ($source.Contains('EXOVANCE') -and $source.Contains('ALTERNATE PLAN')) 'New branding missing.'
+    Assert-True (-not $source.Contains('"LLG"')) 'Legacy dialog monogram remains.'
     Assert-True (-not ($source -match 'boosty\.to|BEYOND PERFORMANCE|BYND_PERF|SECRET-TWEAK -')) 'Promotional header remains.'
+    Assert-True (-not $source.Contains('forceGpuLogical8And10') -and -not $source.Contains('Test-GpuLogical8And10Override')) 'Fixed GPU CPU numbers remain.'
     Assert-True (-not $source.Contains('Enable-HardwareAcceleratedGpuScheduling')) 'Alternate Plan still forces HAGS.'
     Assert-True ($source.Contains("['ExovanceRss'] = @(Get-ExovanceRssSnapshot")) 'Full RSS backup not wired.'
     Assert-True ($source.Contains('Restore-ExovanceRssSnapshot -RegistryPath $matchingDevice.RegistryPath')) 'Full RSS restore not wired.'
@@ -228,6 +267,57 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         Add-Type -AssemblyName System.Windows.Forms,System.Drawing,System.Management
         Add-DeviceTweakerMergedTypesFromSource -CacheAssemblyPath $null
         Assert-True ($null -ne ('DeviceTweakerFormFactory' -as [type])) 'Embedded C# types missing.'
+    }
+    Test-Case 'Auto and Alternate cancellation executes no optimization or registry writes' {
+        $fn=$app.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-ShouldShowNdisAffinityModeDialog'},$true)
+        . ([scriptblock]::Create($fn.Extent.Text))
+        function Enter-DeviceTweakerUiAction { param($Name,$Button) return $true }
+        function Exit-DeviceTweakerUiAction { $script:Exited++ }
+        function Show-DarkMessageBox {
+            param($Message,$Title,$Buttons,$Icon)
+            $script:Prompts++
+            if ($Buttons -eq 'YesNo') { return [System.Windows.Forms.DialogResult]::Yes }
+            return [System.Windows.Forms.DialogResult]::No
+        }
+        function Show-NdisAffinityModeDialog {
+            param($Title,$Prompt,$InitialMode,$Owner)
+            Assert-True ($deviceList.Count -eq 1 -and $deviceList[0].PNPID -like 'PCI*') 'Virtual NIC reached mode dialog.'
+            $script:ModePrompts++
+            return $null
+        }
+        function Get-PhysicalCoreCount { throw 'Cancellation reached optimization.' }
+        $script:CLIMode=$false; $script:forceNetAdapterCx=$false; $script:forceNDIS=$false
+        $this=[pscustomobject]@{}
+        $this | Add-Member ScriptMethod FindForm { return $null }
+        foreach($buttonName in @('$btnAutoOpt','$btnSecretOpt')) {
+            $script:Prompts=0; $script:ModePrompts=0; $script:Exited=0
+            $deviceList=@(
+                [pscustomobject]@{Category='Network';Role='NDIS';PNPID='PCI\VEN_10EC&DEV_8168\123'},
+                [pscustomobject]@{Category='Network';Role='NDIS';DisplayName='Happ Tunnel';PNPID='SWD\WINTUN\123'}
+            )
+            $handlers=@($app.FindAll({param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Expression.Extent.Text -eq $buttonName -and $n.Member.Value -eq 'Add_Click'},$true))
+            Assert-True ($handlers.Count -eq 1) ('Missing real handler: '+$buttonName)
+            $body=$handlers[0].Arguments[0].ScriptBlock.Extent.Text
+            & ([scriptblock]::Create($body.Substring(1,$body.Length-2))) 6>$null
+            $expectedPrompts = if ($buttonName -eq '$btnSecretOpt') { 3 } else { 2 }
+            Assert-True ($script:Prompts -eq $expectedPrompts -and $script:ModePrompts -eq 1 -and $script:Exited -eq 1) 'Cancelled handler continued or skipped finally.'
+            Assert-True ($script:ExovanceUiState -eq 'Ready') 'Cancelled action reported applied.'
+            Assert-True ($deviceList.Count -eq 2) 'Handler removed VPN from the backup/restore list.'
+        }
+    }
+    Test-Case 'larger native CPU cells fit the actual body font' {
+        $fonts=[DeviceTweakerFormFactory]::CreateFontCache($null)
+        $grid=New-Object CpuAffinityGrid
+        try {
+            $grid.Font=$fonts.Font9
+            $grid.LogicalCount=16
+            Assert-True ($grid.Font.SizeInPoints -ge 11) 'Body font remains too small.'
+            Assert-True ($grid.GetCpuBounds(0).Height -ge $grid.Font.Height) 'Large body text clips inside CPU cell.'
+            Assert-True ($grid.GetCpuBounds(1).Top -ge $grid.GetCpuBounds(0).Bottom) 'CPU rows overlap.'
+        } finally {
+            $grid.Dispose()
+            foreach($field in $fonts.GetType().GetFields()) { $value=$field.GetValue($fonts); if($value -is [System.IDisposable]){$value.Dispose()} }
+        }
     }
     Test-Case 'native CPU grid keyboard selection and paint preserve high mask bits' {
         $grid=New-Object CpuAffinityGrid

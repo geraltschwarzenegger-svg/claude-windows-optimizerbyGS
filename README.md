@@ -2,7 +2,7 @@
 
 ![Low Latency — Windows Toolkit by Exovance](docs/assets/banner-exovance.png)
 
-# ⚡ Windows Optimizer by GS
+# ⚡ Exovance Windows Optimizer v2
 
 **Настройки Windows, графики, сети и рабочего стола — в одном консольном меню.**
 
@@ -23,7 +23,7 @@
 
 ## 🎯 О проекте
 
-**Low Latency Corp Menu** — набор настроек для ручной настройки Windows с упором на отклик системы, графику и удобство рабочего стола. Внутри CMD находится PowerShell-код: при запуске он извлекается во временный файл, открывает меню и выполняет выбранные действия.
+**Exovance Optimizer v2** — набор настроек для ручной настройки Windows с упором на отклик системы, графику и удобство рабочего стола. Внутри CMD находится PowerShell-код: при запуске он извлекается во временный файл, открывает меню и выполняет выбранные действия.
 
 Вы можете менять отдельные параметры или запускать пакет **Auto Registry Tweaks**. Пакет затрагивает много подсистем сразу; изучите его состав перед применением. Прирост FPS и снижение задержек **не гарантируются**: результат зависит от оборудования, драйверов и исходных настроек.
 
@@ -44,7 +44,7 @@
 | [docs/COMPARISON.md](docs/COMPARISON.md) | Подробное сравнение оригинала и v2, включая ограничения. |
 | [tests/Test-V2.ps1](tests/Test-V2.ps1) | Проверки новой логики без применения системных настроек. |
 | [DEVICE-TWEAKER/](DEVICE-TWEAKER/) | Отдельный инструмент настройки устройств, добавленный в репозиторий. |
-| [POWER-PLAN/LLC-CERTIFIED.pow](POWER-PLAN/LLC-CERTIFIED.pow) | Файл схемы питания, доступный через меню v2. |
+| [POWER-PLAN/EXOVANCE.pow](POWER-PLAN/EXOVANCE.pow) | Файл схемы питания, доступный через меню v2. |
 
 > [!IMPORTANT]
 > **В комплект уже входят Device Tweaker и схема питания.** v2 находит их в папках `DEVICE-TWEAKER` и `POWER-PLAN` рядом с CMD. Также включены **NVIDIA Profile Inspector Revamped 7.3.2.0** и пользовательский **NvidiaV2.nip** в `Resources/NVIDIA-PROFILE-INSPECTOR`. Другие приложения и локальные установщики драйверов требуют дополнительных файлов в `Resources`. Существующая структура `Resources` имеет приоритет.
@@ -135,7 +135,7 @@ Low-Latency-Corp-Menu_v2.cmd
 | **UAC** | Включает или отключает контроль учётных записей заданными значениями реестра. Отключение снижает защиту Windows. |
 | **Services** | Меняет типы запуска выбранных служб; обратный пункт выставляет встроенные `Start defaults`. |
 | **Powersaving** | Отключает энергосбережение устройств; на ноутбуке это может увеличить расход батареи. |
-| **Power Plan** | Импортирует и активирует включённую схему `POWER-PLAN/LLC-CERTIFIED.pow`; также поддерживает прежний путь через `Resources`. |
+| **Power Plan** | Импортирует и активирует включённую схему `POWER-PLAN/EXOVANCE.pow`; также поддерживает прежний путь через `Resources`. |
 | **Win32PrioritySeparation** | Записывает значение `0x18`. |
 | **Clock Interrupts → Core 0** | Записывает `SerializeTimerExpiration=1`. Название пункта не означает проверенную привязку всех прерываний к ядру 0. |
 
@@ -231,7 +231,7 @@ Low-Latency-Corp-Menu_v2.cmd
 
 <div align="center">
 
-**🛠️ by GS · Настраивайте осознанно · Измеряйте результат на своём ПК**
+**🛠️ Exovance · Настраивайте осознанно · Измеряйте результат на своём ПК**
 
 [Новая версия](Low-Latency-Corp-Menu_v2.cmd) · [Оригинал](Low-Latency-Corp-Menu_SPI_24H2_VisualizationFix.cmd) · [Сообщить об ошибке](https://github.com/geraltschwarzenegger-svg/claude-windows-optimizerbyGS/issues)
 
