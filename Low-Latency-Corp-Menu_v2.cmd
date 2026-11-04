@@ -9609,17 +9609,75 @@ function Get-DetectedGpuVendorAuto {
     return ''
 }
 
+function Invoke-NvidiaProfileInspector {
+    param([switch]$ImportProfile)
+
+    $title = 'NVIDIA Profile Inspector Revamped'
+    Write-Host ''
+    Write-BoxTitle -Title $title
+    Write-Host ''
+
+    $exePath = Resolve-ScriptResourcePath -RelativePath 'Resources\NVIDIA-PROFILE-INSPECTOR\NVPI-R.exe'
+    if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
+        Write-StatusLine -Ok $false -Text "NVPI-R executable not found: $exePath"
+        return $false
+    }
+
+    $startArguments = @{
+        FilePath = $exePath
+        WorkingDirectory = (Split-Path -Parent $exePath)
+        ErrorAction = 'Stop'
+    }
+    if ($ImportProfile) {
+        $profilePath = Resolve-ScriptResourcePath -RelativePath 'Resources\NVIDIA-PROFILE-INSPECTOR\NvidiaV2.nip'
+        if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) {
+            Write-StatusLine -Ok $false -Text "Profile not found: $profilePath"
+            return $false
+        }
+        Write-Host 'Importing NvidiaV2.nip into the global driver profile (Merge).' -ForegroundColor Yellow
+        Write-Host 'This profile changes 43 settings, including G-SYNC/VRR and ReBAR.' -ForegroundColor Yellow
+        Write-Host 'ReBAR Enable v2 requires driver 616.56+ per NVPI-R; hardware/BIOS support is also required.' -ForegroundColor Yellow
+        Write-Host 'Read the NVPI-R result dialog; an exit code of 0 does not prove import success.' -ForegroundColor Yellow
+        # Explicit Merge preserves settings not present in the supplied profile.
+        # Keep result/error dialogs visible: silent import hides partial failures.
+        $startArguments['ArgumentList'] = @('-mergeImport', (Format-ProcessArgument -Argument $profilePath))
+        $startArguments['Wait'] = $true
+        $startArguments['PassThru'] = $true
+    }
+
+    Write-Host ("Launching: {0}" -f $exePath)
+    try {
+        $process = Start-Process @startArguments
+        if ($ImportProfile) {
+            if ($process.ExitCode -ne 0) {
+                Write-StatusLine -Ok $false -Text ("NVPI-R exited with code {0}" -f $process.ExitCode)
+                return $false
+            }
+            # Upstream catches import exceptions and can forward to another instance
+            # without returning its result. Never mark the driver import as verified.
+            Write-Host 'OVERALL: WARNING - Import request finished; verify the NVPI-R result and driver settings.' -ForegroundColor Yellow
+            return $false
+        }
+        Write-StatusLine -Ok $true -Text 'NVPI-R launch request sent.'
+        return $true
+    }
+    catch {
+        Write-StatusLine -Ok $false -Text $_.Exception.Message
+        return $false
+    }
+}
+
 function Invoke-NvidiaProfileInspectorImportAuto {
     $gpuVendor = Get-DetectedGpuVendorAuto
     if ($gpuVendor -ne 'NVIDIA' -and $gpuVendor -ne 'BOTH') {
         Write-Host ''
-        Write-BoxTitle -Title 'Nvidia Profile Inspector - Import .nip'
+        Write-BoxTitle -Title 'NVIDIA Profile Inspector Revamped - Import NvidiaV2.nip'
         Write-Host ''
         Write-Host 'SKIPPED: NVIDIA GPU was not detected; .nip import was not applied.' -ForegroundColor Yellow
         return $true
     }
 
-    return (Invoke-ExternalExecutableLauncherAuto -Title 'Nvidia Profile Inspector - Import .nip' -RelativePath 'Resources\NVIDIA-PROFILE-INSPECTOR\NVIDIA-PROFILE-INSPECTOR.exe' -RelativeArgumentPaths @('Resources\NVIDIA-PROFILE-INSPECTOR\LLC-OPTIMIZED-V3.nip') -WaitForExit)
+    return (Invoke-NvidiaProfileInspector -ImportProfile)
 }
 
 function Invoke-MmcssAuto {
@@ -10195,7 +10253,7 @@ function Invoke-AutoRegistryTweaks {
         Write-BoxTitle -Title 'Auto Registry Tweaks'
         Write-Host ''
         Write-Host 'Auto-mode will apply these entries in order:' -ForegroundColor White
-        Write-Host 'UAC Disable -> QOL Optimize (includes full classic context menu, Explorer-only taskbar, and OneDrive full disable without uninstall) -> Hardware-Accelerated GPU Scheduling Enable -> Display Mode Highest Refresh First / Resolution Tie-Breaker -> Fullscreen Optimization Disable -> Gamebar/Game Mode Disable -> Services Disable -> Power Plan Import/Activate -> Powersaving Disable -> Network Optimization Enable (wired Ethernet only) -> MMCSS Auto -> Win32PrioritySeparation 18 hex -> Clock Interrupts Core 0 -> Nvidia Profile Inspector .nip import -> GPU Auto' -ForegroundColor DarkGray
+        Write-Host 'UAC Disable -> QOL Optimize (includes full classic context menu, Explorer-only taskbar, and OneDrive full disable without uninstall) -> Hardware-Accelerated GPU Scheduling Enable -> Display Mode Highest Refresh First / Resolution Tie-Breaker -> Fullscreen Optimization Disable -> Gamebar/Game Mode Disable -> Services Disable -> Power Plan Import/Activate -> Powersaving Disable -> Network Optimization Enable (wired Ethernet only) -> MMCSS Auto -> Win32PrioritySeparation 18 hex -> Clock Interrupts Core 0 -> NVPI-R NvidiaV2.nip Merge import (check result dialog) -> GPU Auto' -ForegroundColor DarkGray
 
         $failures = 0
 
@@ -10213,7 +10271,7 @@ function Invoke-AutoRegistryTweaks {
         if (-not (Invoke-AutoRegistryStepSafely -Title 'MMCSS - Auto' -Action { Invoke-MmcssAuto })) { $failures++ }
         if (-not (Invoke-AutoRegistryStepSafely -Title 'Win32PrioritySeparation - 18 (hex)' -Action { Invoke-RegistrySetAuto -Title 'Win32PrioritySeparation - 18 (hex)' -Items $win32PrioritySeparation18Hex -AfterMessage '' })) { $failures++ }
         if (-not (Invoke-AutoRegistryStepSafely -Title 'Clock Interrupts - Core 0' -Action { Invoke-RegistrySetAuto -Title 'Clock Interrupts - Core 0' -Items $clockInterruptsCore0 -AfterMessage '' })) { $failures++ }
-        if (-not (Invoke-AutoRegistryStepSafely -Title 'Nvidia Profile Inspector - Import .nip' -Action { Invoke-NvidiaProfileInspectorImportAuto })) { $failures++ }
+        if (-not (Invoke-AutoRegistryStepSafely -Title 'NVPI-R - Import NvidiaV2.nip' -Action { Invoke-NvidiaProfileInspectorImportAuto })) { $failures++ }
         if (-not (Invoke-AutoRegistryStepSafely -Title 'GPU - Auto' -Action { Invoke-GpuTweaksAuto })) { $failures++ }
 
         Write-Host ''
@@ -12858,7 +12916,7 @@ while ($true) {
                     'Device Tweaker',
                     'Windows Defender Switcher',
                     'Windows Update Blocker',
-                    'Nvidia Profile Inspector',
+                    'NVIDIA Profile Inspector Revamped',
                     'HIDUSBF',
                     '7-Zip',
                     'Chrome',
@@ -12908,16 +12966,18 @@ while ($true) {
                     }
                 } elseif ($apps -eq 3) {
                     while ($true) {
-                        $sub = Invoke-Menu -Title 'Nvidia Profile Inspector' -Items @(
-                            'Import .nip',
-                            'Launch NPI',
+                        $sub = Invoke-Menu -Title 'NVIDIA Profile Inspector Revamped' -Items @(
+                            'Import NvidiaV2.nip (global / Merge)',
+                            'Launch NVPI-R',
                             'Back'
                         )
 
                         if ($sub -eq 0) {
-                            Invoke-ExternalExecutableLauncher -Title 'Nvidia Profile Inspector - Import .nip' -RelativePath 'Resources\NVIDIA-PROFILE-INSPECTOR\NVIDIA-PROFILE-INSPECTOR.exe' -RelativeArgumentPaths @('Resources\NVIDIA-PROFILE-INSPECTOR\LLC-OPTIMIZED-V3.nip') -WaitForExit
+                            Invoke-NvidiaProfileInspector -ImportProfile | Out-Null
+                            Wait-ForEnterToContinue
                         } elseif ($sub -eq 1) {
-                            Invoke-ExternalExecutableLauncher -Title 'Nvidia Profile Inspector - Launch NPI' -RelativePath 'Resources\NVIDIA-PROFILE-INSPECTOR\NVIDIA-PROFILE-INSPECTOR.exe'
+                            Invoke-NvidiaProfileInspector | Out-Null
+                            Wait-ForEnterToContinue
                         } else {
                             break
                         }

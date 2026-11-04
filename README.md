@@ -47,7 +47,7 @@
 | [POWER-PLAN/LLC-CERTIFIED.pow](POWER-PLAN/LLC-CERTIFIED.pow) | Файл схемы питания, доступный через меню v2. |
 
 > [!IMPORTANT]
-> **В комплект уже входят Device Tweaker и схема питания.** v2 находит их в папках `DEVICE-TWEAKER` и `POWER-PLAN` рядом с CMD. Другие приложения, локальные установщики драйверов и профиль NVIDIA по-прежнему требуют дополнительных файлов в `Resources`. Существующая структура `Resources` имеет приоритет.
+> **В комплект уже входят Device Tweaker и схема питания.** v2 находит их в папках `DEVICE-TWEAKER` и `POWER-PLAN` рядом с CMD. Также включены **NVIDIA Profile Inspector Revamped 7.3.2.0** и пользовательский **NvidiaV2.nip** в `Resources/NVIDIA-PROFILE-INSPECTOR`. Другие приложения и локальные установщики драйверов требуют дополнительных файлов в `Resources`. Существующая структура `Resources` имеет приоритет.
 
 > **Windows 11 26H2:** совместимость не подтверждена; адаптация под неё в этот выпуск не включена. [Предварительный аудит →](docs/WINDOWS-26H2-RESEARCH.md)
 
@@ -112,6 +112,14 @@ Low-Latency-Corp-Menu_v2.cmd
 
 Справка по аргументам: `Low-Latency-Corp-Menu_v2.cmd /help`.
 
+### NVIDIA Profile Inspector Revamped
+
+**Apps → NVIDIA Profile Inspector Revamped → Launch NVPI-R** открывает приложение. Пункт **Import NvidiaV2.nip (global / Merge)** импортирует включённый профиль; Auto использует его же при обнаружении NVIDIA.
+
+В `NvidiaV2.nip` включён **ReBAR Enable v2 = 2 (Enabled)**. По описанию NVPI-R этот параметр требует драйвер **616.56+** и не заменяет включение ReBAR в BIOS. Профиль содержит 43 глобальные настройки, включая отключение G-SYNC/VRR. Merge сохраняет остальные значения; результат импорта нужно проверить в диалоге NVPI-R. Нулевой код выхода программы не доказывает успешное применение, поэтому Auto отмечает этот шаг предупреждением.
+
+[Состав комплекта, требования и подробности профиля](Resources/NVIDIA-PROFILE-INSPECTOR/README.md).
+
 ## 🧩 Что есть в меню
 
 ### ⚙️ Система и планировщик
@@ -148,7 +156,7 @@ Low-Latency-Corp-Menu_v2.cmd
 | :--- | :--- |
 | **QOL → Optimize** | Меняет Explorer, контекстное меню, Start/Search, анимации, доступность, ускорение мыши и политики Windows. |
 | **Autostart** | Управляет Run/RunOnce, ярлыками Startup и загрузочными/входными триггерами задач. |
-| **Apps** | Открывает включённый Device Tweaker; NPI, HIDUSBF, 7-Zip, Chrome и другие утилиты требуют отдельных файлов в `Resources`. |
+| **Apps** | Открывает включённый Device Tweaker; NVPI-R и `NvidiaV2.nip` включены; HIDUSBF, 7-Zip, Chrome и другие утилиты требуют отдельных файлов в `Resources`. |
 | **Activate Windows** | Запускает внешний BAT из `Resources`. Встроенной активации в CMD нет; файл в репозиторий не включён. |
 
 > [!WARNING]
@@ -171,7 +179,7 @@ Low-Latency-Corp-Menu_v2.cmd
 10. MMCSS Auto.
 11. `Win32PrioritySeparation = 0x18`.
 12. Clock Interrupts → Core 0.
-13. Импорт внешнего `.nip` через NVIDIA Profile Inspector.
+13. Импорт комплектного `NvidiaV2.nip` через NVIDIA Profile Inspector Revamped в режиме Merge (результат требует проверки в диалоге NVPI-R).
 14. GPU Auto.
 
 Это **пакет системных изменений**, а не просто несколько косметических параметров реестра. Частичная ошибка не отменяет уже выполненные шаги. При отсутствии необходимых ресурсов отдельные шаги завершатся ошибкой; общий откат не выполняется.

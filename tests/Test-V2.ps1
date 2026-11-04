@@ -62,7 +62,7 @@ Test-Case 'bundled Device Tweaker PowerShell source parses without execution' {
 }
 
 # Import function declarations only; no top-level application statement is run.
-$required = @('Confirm-LlcBroadChanges', 'Assert-LlcDownloadLength', 'Get-LlcPreflightResult', 'Get-OriginalScriptFolder', 'Resolve-ScriptResourcePath')
+$required = @('Confirm-LlcBroadChanges', 'Assert-LlcDownloadLength', 'Get-LlcPreflightResult', 'Get-OriginalScriptFolder', 'Resolve-ScriptResourcePath', 'Format-ProcessArgument', 'Invoke-NvidiaProfileInspector', 'Invoke-NvidiaProfileInspectorImportAuto')
 foreach ($name in $required) {
     $definitions = @($asts.v2.FindAll({ param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -196,6 +196,115 @@ Test-Case 'unknown size permits a nonempty download' {
 Test-Case 'large installer length is compared as Int64' {
     Assert-LlcDownloadLength -DownloadedBytes 4294967296 -TotalBytes 4294967296
     Assert-Throws { Assert-LlcDownloadLength -DownloadedBytes 4294967295 -TotalBytes 4294967296 } 'mismatch'
+}
+
+# The real launcher is exercised with fixture paths and a stub process; no EXE runs.
+function Test-NvpiFixture {
+    param([scriptblock]$NvpiBody)
+    Test-ResourceFixture {
+        param($fixtureRoot)
+        $toolDir = Join-Path $fixtureRoot 'Resources/NVIDIA-PROFILE-INSPECTOR'
+        $null = New-Item -ItemType Directory -Path $toolDir -Force
+        $exe = Join-Path $toolDir 'NVPI-R.exe'
+        $profile = Join-Path $toolDir 'NvidiaV2.nip'
+        [IO.File]::WriteAllText($exe, 'fixture only')
+        [IO.File]::WriteAllText($profile, 'fixture only')
+        $script:NvpiStarts = @()
+        $script:NvpiExitCode = 0
+        $script:NvpiThrow = $false
+        function Write-BoxTitle { param($Title) }
+        function Write-StatusLine { param($Ok, $Text) }
+        function Start-Process {
+            param($FilePath, $WorkingDirectory, $ArgumentList, [switch]$Wait, [switch]$PassThru, $ErrorAction)
+            $script:NvpiStarts += [pscustomobject]@{FilePath=$FilePath; WorkingDirectory=$WorkingDirectory; Arguments=$ArgumentList; Wait=[bool]$Wait; PassThru=[bool]$PassThru}
+            if ($script:NvpiThrow) { throw 'fixture process creation failure' }
+            if ($PassThru) { return [pscustomobject]@{ExitCode=$script:NvpiExitCode} }
+        }
+        & $NvpiBody $exe $profile
+    }
+}
+
+Test-Case 'bundled NvidiaV2 XML decodes with its declared encoding and retains ReBAR settings' {
+    $profilePath = Join-Path $repo 'Resources/NVIDIA-PROFILE-INSPECTOR/NvidiaV2.nip'
+    $reader = [Xml.XmlReader]::Create($profilePath)
+    try { $document = New-Object Xml.XmlDocument; $document.Load($reader) } finally { $reader.Dispose() }
+    $profiles = @($document.ArrayOfProfile.Profile)
+    Assert-True ($profiles.Count -eq 1) 'Expected one global profile.'
+    Assert-True ([string]::IsNullOrEmpty([string]$profiles[0].ProfileName)) 'Profile must target global settings.'
+    $settings = @($profiles[0].Settings.ProfileSetting)
+    Assert-True ($settings.Count -eq 43) 'User profile settings were lost.'
+    $ids = @($settings | ForEach-Object { $_.SettingID })
+    Assert-True (@($ids | Select-Object -Unique).Count -eq 43) 'Duplicate driver setting IDs.'
+    $rebar = @($settings | Where-Object { $_.SettingID -eq '784929' })
+    Assert-True ($rebar.Count -eq 1 -and $rebar[0].SettingValue -eq '2' -and $rebar[0].ValueType -eq 'Dword') 'ReBAR Enable v2 must stay Enabled.'
+    $size = @($settings | Where-Object { $_.SettingID -eq '983295' })
+    Assert-True ($size.Count -eq 1 -and $size[0].SettingValue -eq '2147483648' -and $size[0].ValueType -eq 'Qword') 'ReBAR size limit must stay 2 GiB.'
+}
+Test-Case 'NVPI GUI launches without applying a profile or waiting for its window' {
+    Test-NvpiFixture {
+        param($exe, $profile)
+        Remove-Item -LiteralPath $profile
+        Assert-True (Invoke-NvidiaProfileInspector 6>$null) 'GUI launch should not need a profile.'
+        Assert-True ($script:NvpiStarts.Count -eq 1) 'Expected one launch.'
+        $call = $script:NvpiStarts[0]
+        Assert-True ($call.FilePath -eq $exe -and $call.WorkingDirectory -eq (Split-Path -Parent $exe)) 'Wrong executable/working directory.'
+        Assert-True (-not $call.Wait -and -not $call.PassThru -and $null -eq $call.Arguments) 'GUI launch must not import.'
+    }
+}
+Test-Case 'NVPI import merges quoted profile paths and never reports verified success from exit 0' {
+    Test-NvpiFixture {
+        param($exe, $profile)
+        # Include spaces to exercise Windows Start-Process argument quoting.
+        $env:THIS = Join-Path (Split-Path -Parent $env:THIS) 'folder with spaces/menu.cmd'
+        $target = Join-Path (Split-Path -Parent $env:THIS) 'Resources/NVIDIA-PROFILE-INSPECTOR'
+        $null = New-Item -ItemType Directory -Path $target -Force
+        Copy-Item -LiteralPath $exe -Destination $target
+        Copy-Item -LiteralPath $profile -Destination $target
+        $expectedProfile = Join-Path $target 'NvidiaV2.nip'
+        $result = Invoke-NvidiaProfileInspector 6>$null -ImportProfile
+        Assert-True ($result -eq $false) 'Unverifiable driver import must remain a warning.'
+        Assert-True ($script:NvpiStarts.Count -eq 1) 'Expected one import launch.'
+        $call = $script:NvpiStarts[0]
+        Assert-True ($call.Wait -and $call.PassThru) 'Import must await its process.'
+        Assert-True ($call.Arguments.Count -eq 2 -and $call.Arguments[0] -eq '-mergeImport') 'Import must explicitly merge, without silent/replace switches.'
+        Assert-True ($call.Arguments[1] -eq ('"' + $expectedProfile + '"')) 'Profile path with spaces must be quoted.'
+    }
+}
+foreach ($missing in @('exe', 'profile')) {
+    Test-Case ('NVPI import does not start when missing ' + $missing) {
+        Test-NvpiFixture {
+            param($exe, $profile)
+            $path = if ($missing -eq 'exe') { $exe } else { $profile }
+            Remove-Item -LiteralPath $path
+            Assert-True (-not (Invoke-NvidiaProfileInspector -ImportProfile 6>$null)) 'Missing resource must fail.'
+            Assert-True ($script:NvpiStarts.Count -eq 0) 'Process started without required resource.'
+        }
+    }
+}
+Test-Case 'NVPI handles a nonzero exit code and process creation failure' {
+    Test-NvpiFixture {
+        $script:NvpiExitCode = 5
+        Assert-True (-not (Invoke-NvidiaProfileInspector -ImportProfile 6>$null)) 'Nonzero exit must fail.'
+        $script:NvpiThrow = $true
+        Assert-True (-not (Invoke-NvidiaProfileInspector 6>$null)) 'Failed process creation must fail.'
+    }
+}
+foreach ($vendor in @('AMD', '', 'NVIDIA', 'BOTH')) {
+    Test-Case ('NVPI Auto dispatch for GPU vendor [' + $vendor + ']') {
+        function Get-DetectedGpuVendorAuto { return $vendor }
+        function Write-BoxTitle { param($Title) }
+        $script:NvpiImportCalls = 0
+        function Invoke-NvidiaProfileInspector {
+            param([switch]$ImportProfile)
+            Assert-True $ImportProfile 'Auto must request import.'
+            $script:NvpiImportCalls++
+            return $false
+        }
+        $result = Invoke-NvidiaProfileInspectorImportAuto 6>$null
+        $supported = $vendor -in @('NVIDIA','BOTH')
+        Assert-True ($script:NvpiImportCalls -eq [int]$supported) 'Incorrect GPU vendor dispatch.'
+        Assert-True ($result -eq (-not $supported)) 'Import warning or non-NVIDIA skip result lost.'
+    }
 }
 
 # Exercise the actual action functions' cancellation paths, replacing every
