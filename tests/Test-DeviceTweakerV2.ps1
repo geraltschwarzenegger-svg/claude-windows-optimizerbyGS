@@ -213,7 +213,9 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
                 Copy-Item -LiteralPath (Join-Path $folder $file) -Destination $fixture
             }
             $launcher=Join-Path $fixture 'RUN-EXOVANCE-V2.bat'
-            $output=@(& $env:ComSpec /d /c ('""{0}" /check"' -f $launcher) 2>&1)
+            # Match Invoke-ExternalBatchLauncher: PowerShell handles BAT paths
+            # with spaces directly; an extra cmd /c layer double-quotes on WinPS.
+            $output=@(& $launcher /check 2>&1)
             Assert-True ($LASTEXITCODE -eq 0) ('Launcher check failed: '+($output -join "`n"))
             Assert-True (($output -join "`n").Contains('PASS: Exovance v2 syntax')) 'No check result.'
             Assert-True (-not (Test-Path (Join-Path $fixture 'logs'))) 'Check initialized application logs.'
