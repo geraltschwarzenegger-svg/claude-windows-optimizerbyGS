@@ -237,12 +237,12 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         $grid.Size=New-Object System.Drawing.Size(700,210)
         try {
             $method=$grid.GetType().GetMethod('OnKeyDown',[Reflection.BindingFlags]'Instance,NonPublic')
-            $null=$method.Invoke($grid,@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::End))))
-            $null=$method.Invoke($grid,@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
+            $null=$method.Invoke($grid,[System.Windows.Forms.KeyEventArgs[]]@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::End))))
+            $null=$method.Invoke($grid,[System.Windows.Forms.KeyEventArgs[]]@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
             Assert-True ($grid.Mask -eq [Convert]::ToUInt64('8000000000000000',16)) 'Keyboard lost bit 63.'
             # Shrinking a dynamically rebuilt grid must reset its keyboard focus index.
             $grid.LogicalCount=16
-            $null=$method.Invoke($grid,@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
+            $null=$method.Invoke($grid,[System.Windows.Forms.KeyEventArgs[]]@((New-Object System.Windows.Forms.KeyEventArgs([System.Windows.Forms.Keys]::Space))))
             Assert-True ($grid.GetCpuChecked(15) -and $grid.Mask -eq 32768) 'Focus or mask was not clamped after topology change.'
             $grid.Mask=1
             $bitmap=New-Object System.Drawing.Bitmap($grid.Width,$grid.Height)
