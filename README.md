@@ -120,6 +120,12 @@ Low-Latency-Corp-Menu_v2.cmd
 
 [Состав комплекта, требования и подробности профиля](Resources/NVIDIA-PROFILE-INSPECTOR/README.md).
 
+### Exovance Device Tweaker v2
+
+**Apps → Exovance Device Tweaker v2 → Launch Exovance v2** открывает отдельную версию из `DEVICE-TWEAKER-V2`. В ней новый графитовый интерфейс Exovance с бирюзовой подсветкой выбранных CPU, hover/busy-состояниями кнопок и индикацией результата. Исправлены подтверждённые ошибки масок CPU, RSS и backup/restore. Прежний Secret Optimization отображается как **Alternate Plan** и больше не включает HAGS автоматически. Оригинальный Device Tweaker доступен вторым пунктом подменю.
+
+[Запуск, описание Auto/Alternate, исправления и ограничения](DEVICE-TWEAKER-V2/README.md). Для запуска нужен весь каталог v2 и Windows PowerShell 5.1 x64 с правами администратора.
+
 ## 🧩 Что есть в меню
 
 ### ⚙️ Система и планировщик
