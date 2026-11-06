@@ -1,0 +1,157 @@
+name: Publish Exovance Rust release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'EXOVANCE-RUST/Cargo.toml'
+      - '.github/workflows/release-rust.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exovance-rust-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Validate and package Windows MSVC
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: EXOVANCE-RUST
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: EXOVANCE-RUST
+      - name: Read package version
+        id: version
+        shell: powershell
+        run: |
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed' }
+          $version = @($metadata.packages | Where-Object { $_.name -eq 'exovance' })[0].version
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid version' }
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Validate all PowerShell actions without applying settings
+        shell: powershell
+        run: |
+          ../tests/Test-V2.ps1
+          ../tests/Test-Menu.ps1
+          ../tests/Test-GpuRegistry.ps1
+          ../tests/Test-DeviceTweakerV2.ps1
+          ../tests/Test-DeviceTweakerUI.ps1
+          ../tests/Test-DeviceLogs.ps1
+      - name: Check Rust formatting
+        run: cargo fmt --check
+      - name: Check Rust code
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test Rust actions with mocks
+        run: cargo test --locked
+      - name: Validate catalog and Windows PowerShell 5.1 pipe
+        shell: powershell
+        run: |
+          ./tools/Export-Catalog.ps1 -Check
+          ./tools/Test-Bridge.ps1
+      - name: Build native Windows executable
+        run: cargo build --release --locked
+      - name: Validate read-only executable modes
+        shell: powershell
+        run: |
+          ./target/release/exovance.exe --snapshot --width 80 --height 30 | Out-File target/preview.txt -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Snapshot failed' }
+          ./target/release/exovance.exe --check --root ..
+          if ($LASTEXITCODE -ne 0) { throw 'Read-only host check failed' }
+      - name: Package the executable, resources, licenses and checksums
+        run: |
+          python tools/Package-Release.py --executable target/release/exovance.exe --output target/Exovance-Rust-Windows-x64.zip --target x86_64-pc-windows-msvc --with-resources --note "Built and checked on Windows with MSVC. No hardware changes or performance measurements were performed."
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+          Copy-Item RELEASE-NOTES.md target/RELEASE-NOTES.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: |
+            EXOVANCE-RUST/target/Exovance-Rust-Windows-x64.zip
+            EXOVANCE-RUST/target/Exovance-Rust-Windows-x64.zip.sha256
+            EXOVANCE-RUST/target/RELEASE-NOTES.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish version and update the repository download
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.windows.outputs.version }}
+      RELEASE_SHA: ${{ github.sha }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows-x64
+          path: release-files
+      - name: Verify ZIP checksum
+        working-directory: release-files
+        run: sha256sum --check Exovance-Rust-Windows-x64.zip.sha256
+      - name: Publish the versioned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="exovance-rust-v${RELEASE_VERSION}"
+          zip=release-files/Exovance-Rust-Windows-x64.zip
+          checksum="${zip}.sha256"
+          if gh release view "$tag" --json isDraft,targetCommitish > /tmp/exovance-release.json 2>/dev/null; then
+            previous_sha=$(jq -r .targetCommitish /tmp/exovance-release.json)
+            if [ "$previous_sha" != "$RELEASE_SHA" ]; then
+              echo '::error::This version already belongs to another source commit. Bump Cargo.toml and Cargo.lock.'
+              exit 1
+            fi
+            if [ "$(jq -r .isDraft /tmp/exovance-release.json)" = true ]; then
+              gh release upload "$tag" "$zip" "$checksum" --clobber
+              gh release edit "$tag" --draft=false
+            else
+              # A rerun mirrors the actual published files, even if rebuilding changed PE bytes.
+              gh release download "$tag" --pattern 'Exovance-Rust-Windows-x64.zip*' --dir release-files --clobber
+            fi
+          else
+            gh release create "$tag" --target "$RELEASE_SHA" --prerelease --draft \
+              --title "Exovance Rust ${RELEASE_VERSION} Preview" \
+              --notes-file release-files/RELEASE-NOTES.md "$zip" "$checksum"
+            gh release edit "$tag" --draft=false
+          fi
+          (cd release-files && sha256sum --check Exovance-Rust-Windows-x64.zip.sha256)
+      - name: Mirror the same native ZIP to the repository root
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
+            echo '::notice::Release is not in main; repository download was not changed.'
+            exit 0
+          fi
+          git checkout -B exovance-download-sync origin/main
+          if ! git diff --quiet "$RELEASE_SHA" HEAD -- EXOVANCE-RUST Low-Latency-Corp-Menu_v2.cmd DEVICE-TWEAKER DEVICE-TWEAKER-V2 POWER-PLAN Resources/NVIDIA-PROFILE-INSPECTOR; then
+            echo '::warning::Program sources changed during the build; the versioned release is available, but the repository download was not replaced.'
+            exit 0
+          fi
+          cp release-files/Exovance-Rust-Windows-x64.zip .
+          cp release-files/Exovance-Rust-Windows-x64.zip.sha256 .
+          git add Exovance-Rust-Windows-x64.zip Exovance-Rust-Windows-x64.zip.sha256
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Update Windows download to Exovance Rust ${RELEASE_VERSION}"
+          git push origin HEAD:main

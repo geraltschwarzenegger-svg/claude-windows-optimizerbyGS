@@ -23,9 +23,11 @@
 
 ## Скачать Rust Preview
 
+Основной канал готовых версий — [GitHub Releases](https://github.com/geraltschwarzenegger-svg/claude-windows-optimizerbyGS/releases). В Assets публикуются нативная Windows MSVC-сборка ZIP и её SHA256. ZIP в корне автоматически обновляется теми же файлами после успешного релиза, если исходники main не изменились во время сборки. GitHub Packages для загрузки программы не требуется.
+
 [**Скачать Exovance-Rust-Windows-x64.zip**](https://github.com/geraltschwarzenegger-svg/claude-windows-optimizerbyGS/raw/refs/heads/main/Exovance-Rust-Windows-x64.zip) · [SHA256 архива](Exovance-Rust-Windows-x64.zip.sha256)
 
-Распакуй ZIP в отдельную папку и запусти `Exovance.exe`; внутри сразу лежат EXE и комплектные ресурсы. Ревизия исходников, способ сборки и ограничения проверки указаны в `BUILD-INFO.txt`. Это предварительная версия: часть действий выполняется встроенным PowerShell и внешними приложениями. ZIP в корне — кросс-сборка GNU для Windows x64; локальный запуск этого EXE на Windows не проверялся. Нативная MSVC-сборка доступна в артефактах [Windows CI](https://github.com/geraltschwarzenegger-svg/claude-windows-optimizerbyGS/actions/workflows/rust.yml).
+Распакуй ZIP в отдельную папку и запусти `Exovance.exe`; внутри сразу лежат EXE и комплектные ресурсы. Ревизия исходников, способ сборки и ограничения проверки указаны в `BUILD-INFO.txt`. Это предварительная версия: часть действий выполняется встроенным PowerShell и внешними приложениями. Способ сборки конкретного архива указан в BUILD-INFO; дополнительные Windows MSVC-сборки доступны в артефактах [Windows CI](https://github.com/geraltschwarzenegger-svg/claude-windows-optimizerbyGS/actions/workflows/rust.yml).
 
 ## Русские пояснения в меню v2
 
