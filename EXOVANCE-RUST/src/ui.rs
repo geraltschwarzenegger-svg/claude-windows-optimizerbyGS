@@ -68,7 +68,10 @@ fn frame(
                     " EXOVANCE",
                     Style::default().fg(MINT).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("   /   RUST PREVIEW 0.1", Style::default().fg(MUTED)),
+                Span::styled(
+                    format!("   /   RUST PREVIEW {}", env!("CARGO_PKG_VERSION")),
+                    Style::default().fg(MUTED),
+                ),
             ]),
             Line::from(format!(" {}", model::label(title))),
         ])

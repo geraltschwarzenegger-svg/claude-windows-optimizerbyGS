@@ -45,8 +45,9 @@ if args.extra_notices:
 files = {'Exovance.exe': exe.read_bytes(), 'README.md': (folder / 'README.md').read_bytes(),
          'THIRD-PARTY-NOTICES.txt': '\n'.join(notices).encode('utf-8'),
          'Inspect-PowerSchemeManager.ps1': (folder / 'tools/Inspect-PowerSchemeManager.ps1').read_bytes()}
+version = next(package['version'] for package in meta['packages'] if package['name'] == 'exovance' and not package.get('source'))
 revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
-files['BUILD-INFO.txt'] = f'Exovance Rust 0.1.0\nTarget: {args.target}\nSource revision: {revision}\n{args.note}\nThe native menu embeds existing PowerShell 5.1 actions; migration is not complete.\n'.encode('utf-8')
+files['BUILD-INFO.txt'] = f'Exovance Rust {version}\nTarget: {args.target}\nSource revision: {revision}\n{args.note}\nThe native menu embeds existing PowerShell 5.1 actions; migration is not complete.\n'.encode('utf-8')
 if args.with_resources:
     # Ship tracked program resources only, never personal logs or saved machine settings.
     tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=repo).decode('utf-8').split('\0')
