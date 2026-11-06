@@ -282,7 +282,9 @@ function Get-LlcRegistryHelpLines {
             if ($item.PSObject.Properties['Key'] -and $item.PSObject.Properties['Name']) {
                 $kind = if ($item.PSObject.Properties['Type']) { [string]$item.Type } else { 'DWord' }
                 $value = if ($kind -eq 'Delete') { 'удалить параметр' } else { [string]$item.Value }
-                '{0} | {1} = {2} ({3})' -f $item.Key, $item.Name, $value, $kind
+                # This is preset documentation, not a read of the current registry.
+                $key = if ($item.Key -eq '<GPU_DRIVER_KEY>') { 'HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\<индекс выбранной GPU>' } else { $item.Key }
+                '{0} | {1} = {2} ({3})' -f $key, $item.Name, $value, $kind
             }
         }
     }
@@ -473,17 +475,17 @@ function Get-LlcMenuHelp {
         'gpu' {
             $summary='Раздел видеокарты: выбор NVIDIA/AMD и переход к настройкам или драйверам.'
             $effect='Выбор производителя открывает следующее меню; оптимизация выполняется отдельным пунктом.'
-            $where='У пресетов: HKLM\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000; у установки — отдельный установщик.'
+            $where='У пресетов: HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\<индекс выбранной GPU>; у установки — отдельный установщик.'
             $advice='Сначала проверь производителя и конкретное действие. Установка драйвера и пресет — разные операции.'
         }
         { $_ -in @('nvidiaPreset','amdPreset') } {
             $vendor = if ($topic -eq 'nvidiaPreset') { 'NVIDIA' } else { 'AMD' }
             $summary='Набор параметров драйвера '+$vendor+' из исходного меню.'
             $effect='Optimize записывает пресет; Revert записывает обратный набор значений из программы.'
-            $where='HKLM\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000'
-            $advice='Перед применением проверь, что ветка 0000 относится к твоей GPU, и сохрани исходные значения.'
+            $where='HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\<индекс выбранной GPU>'
+            $advice='Перед применением проверь выбранную модель и показанный путь; сохрани исходные значения.'
             $sources=if($topic -eq 'nvidiaPreset') { if($text -like 'Revert*'){@('nvidiaGpuRevert')}else{@('nvidiaGpuOptimize')} } else { if($text -like 'Revert*'){@('amdGpuRevert')}else{@('amdGpuOptimize')} }
-            $details=@('Эти параметры зависят от драйвера; часть может не поддерживаться. Их запись не доказывает уменьшение задержки.','Revert не читает твой прежний backup: он применяет фиксированный обратный пресет.','Путь ControlSet001 и индекс 0000 заданы в текущем коде. На другом ПК или после установки драйверов соответствие необходимо проверить.')
+            $details=@('Эти параметры зависят от драйвера; часть может не поддерживаться. Их запись не доказывает уменьшение задержки.','Revert не читает твой прежний backup: он применяет фиксированный обратный пресет.','Ветка определяется по Driver у присутствующего PCI-адаптера нужного производителя; при нескольких GPU нужен выбор. Если путь не подтверждён, запись отменяется.')
         }
         'drivers' {
             $summary='Установка/загрузка драйверов и запуск средств очистки установочных пакетов.'
@@ -3723,7 +3725,8 @@ $hagsDisable = @(
 )
 
 
-$gpuDisplayClassKey = 'HKLM\SYSTEM\ControlSet001\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000'
+# Templates are bound to a verified present adapter immediately before applying.
+$gpuDisplayClassKey = '<GPU_DRIVER_KEY>'
 
 $nvidiaGpuOptimize = @(
     [pscustomobject]@{ Key=$gpuDisplayClassKey; Name='RMAERRForceDisable'; Value='0x00000001'; Type='DWord'; CreateKey=$true },
@@ -10056,21 +10059,117 @@ function Invoke-ExternalExecutableLauncherAuto {
     return $true
 }
 
-function Get-DetectedGpuVendorAuto {
-    $gpuName = Get-DetectedGpuName
-    $hasNvidia = $false
-    $hasAmd = $false
-
-    if (-not [string]::IsNullOrWhiteSpace($gpuName)) {
-        if ($gpuName -match '(?i)\b(NVIDIA|GeForce|RTX|GTX|Quadro|Tesla)\b') { $hasNvidia = $true }
-        if ($gpuName -match '(?i)\b(AMD|Radeon|Radeon\s+RX|RX\s*[0-9]|Vega)\b') { $hasAmd = $true }
+function Get-LlcPresentGpuDevices {
+    # PnP presence avoids old adapters left behind after a driver/hardware change.
+    try {
+        $devices = @(Get-PnpDevice -Class Display -PresentOnly -ErrorAction Stop)
+        foreach ($device in $devices) {
+            [pscustomobject]@{ Name=[string]$device.FriendlyName; InstanceId=[string]$device.InstanceId }
+        }
+    } catch {
+        try { $controllers = @(Get-CimInstance -ClassName Win32_VideoController -Filter 'ConfigManagerErrorCode=0' -ErrorAction Stop) }
+        catch { $controllers = @(Get-WmiObject -Class Win32_VideoController -Filter 'ConfigManagerErrorCode=0' -ErrorAction Stop) }
+        foreach ($controller in $controllers) {
+            [pscustomobject]@{ Name=[string]$controller.Name; InstanceId=[string]$controller.PNPDeviceID }
+        }
     }
+}
 
-    if ($hasNvidia -and -not $hasAmd) { return 'NVIDIA' }
-    if ($hasAmd -and -not $hasNvidia) { return 'AMD' }
-    if ($hasNvidia -and $hasAmd) { return 'BOTH' }
+function Get-LlcGpuRegistryTargets {
+    param([Parameter(Mandatory=$true)][ValidateSet('NVIDIA','AMD')][string]$Vendor)
+    $vendorId = if ($Vendor -eq 'NVIDIA') { '10DE' } else { '1002' }
+    $displayGuid = '{4d36e968-e325-11ce-bfc1-08002be10318}'
+    $seen = @{}
+    foreach ($device in @(Get-LlcPresentGpuDevices)) {
+        $id = [string]$device.InstanceId
+        if ($id -notmatch ('^PCI\\VEN_'+$vendorId+'&[0-9A-Z_&]+\\[0-9A-Z_&]+$')) { continue }
+        if ($seen.ContainsKey($id)) { continue }
+        $seen[$id] = $true
+        $hardware = Get-ItemProperty -LiteralPath ('Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\'+$id) -ErrorAction Stop
+        $driver = [string]$hardware.Driver
+        if ([string]$hardware.ClassGUID -ine $displayGuid -or $driver -notmatch ('^'+[regex]::Escape($displayGuid)+'\\[0-9]{4}$')) {
+            throw ('Cannot verify display driver mapping for '+$id)
+        }
+        $key = 'HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\'+$driver
+        if (-not (Test-Path -LiteralPath ('Registry::'+$key) -PathType Container -ErrorAction Stop)) {
+            throw ('GPU driver registry key does not exist: '+$key)
+        }
+        [pscustomobject]@{ Name=[string]$device.Name; InstanceId=$id; Driver=$driver; Key=$key }
+    }
+}
+
+function ConvertTo-LlcGpuRegistryItems {
+    param([Parameter(Mandatory=$true)][object[]]$Items, [Parameter(Mandatory=$true)][string]$Key)
+    if ($Key -notmatch '^HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Class\\\{4d36e968-e325-11ce-bfc1-08002be10318\}\\[0-9]{4}$') {
+        throw 'Invalid GPU driver registry target.'
+    }
+    foreach ($item in $Items) {
+        if ($item.Key -ne '<GPU_DRIVER_KEY>') { throw 'Unexpected GPU preset target.' }
+        $copy = $item.PSObject.Copy()
+        $copy.Key = $Key
+        # Never create a guessed class key. The existing mapped key was verified above.
+        $copy | Add-Member -NotePropertyName CreateKey -NotePropertyValue $false -Force
+        $copy
+    }
+}
+
+function Invoke-LlcGpuRegistryPreset {
+    param(
+        [Parameter(Mandatory=$true)][ValidateSet('NVIDIA','AMD')][string]$Vendor,
+        [Parameter(Mandatory=$true)][string]$Title,
+        [Parameter(Mandatory=$true)][object[]]$Items,
+        [switch]$Auto
+    )
+    try {
+        $targets = @(Get-LlcGpuRegistryTargets -Vendor $Vendor)
+        if ($targets.Count -eq 0) { throw ('No present '+$Vendor+' PCI display adapter with a verified driver key was found.') }
+        $target = $targets[0]
+        if ($targets.Count -gt 1) {
+            $choices = @(for ($i=0; $i -lt $targets.Count; $i++) {
+                [pscustomobject]@{ Text=($targets[$i].Name+' | '+$targets[$i].InstanceId+' | '+$targets[$i].Driver); Value=$i }
+            })
+            $choices += [pscustomobject]@{ Text='Cancel'; Value=-1 }
+            $choice = Invoke-Menu -Title ($Vendor+' - Select GPU registry target') -Items $choices
+            if ($choice -lt 0) {
+                Write-StatusLine -Ok $true -Text 'GPU registry action cancelled; no settings were written.' -Warning
+                return $true
+            }
+            if ($choice -ge $targets.Count) { throw 'Invalid GPU selection.' }
+            $target = $targets[$choice]
+        }
+        # Resolve once more after user input; a driver reinstall may have changed the mapping.
+        $verified = @(Get-LlcGpuRegistryTargets -Vendor $Vendor | Where-Object { $_.InstanceId -eq $target.InstanceId -and $_.Key -eq $target.Key })
+        if ($verified.Count -ne 1) { throw 'GPU driver mapping changed; reopen the action before applying.' }
+        $bound = @(ConvertTo-LlcGpuRegistryItems -Items $Items -Key $target.Key)
+        $description = $Title+' | '+$target.Name+' | '+$target.Key
+        Write-StatusLine -Ok $true -Text ('GPU target: '+$target.Name+' | '+$target.InstanceId+' | '+$target.Key)
+        if (-not $Auto) { Clear-ConsoleScreen }
+        $success = Invoke-RegistrySetAuto -Title $description -Items $bound -AfterMessage ''
+        if (-not $Auto) { Wait-ForEnterToContinue }
+        return [bool]$success
+    } catch {
+        Write-StatusLine -Ok $false -Text ('GPU registry action failed: '+$_.Exception.Message)
+        if (-not $Auto) { Wait-ForEnterToContinue }
+        return $false
+    }
+}
+
+function Get-DetectedGpuVendorAuto {
+    $vendors = @{}
+    try {
+        foreach ($device in @(Get-LlcPresentGpuDevices)) {
+            if ($device.InstanceId -match '^PCI\\VEN_10DE&') { $vendors.NVIDIA = $true }
+            if ($device.InstanceId -match '^PCI\\VEN_1002&') { $vendors.AMD = $true }
+        }
+    } catch {
+        throw ('GPU detection failed: '+$_.Exception.Message)
+    }
+    if ($vendors.NVIDIA -and $vendors.AMD) { return 'BOTH' }
+    if ($vendors.NVIDIA) { return 'NVIDIA' }
+    if ($vendors.AMD) { return 'AMD' }
     return ''
 }
+
 
 function Invoke-NvidiaProfileInspector {
     param([switch]$ImportProfile)
@@ -10212,19 +10311,19 @@ function Invoke-GpuTweaksAuto {
     Write-BoxTitle -Title (Get-DetectedGpuMenuEntryText -Base 'GPU - Auto')
     Write-Host ''
 
-    if ([string]::IsNullOrWhiteSpace($gpuName)) {
-        Write-Host 'SKIPPED: No supported NVIDIA or AMD GPU was detected; GPU tweaks were not applied.' -ForegroundColor Yellow
+    if ([string]::IsNullOrWhiteSpace($gpuVendor)) {
+        Write-Host 'SKIPPED: No present supported NVIDIA or AMD PCI GPU was detected; GPU tweaks were not applied.' -ForegroundColor Yellow
         return $true
     }
 
     Write-Host ('Detected GPU: {0}' -f $gpuName) -ForegroundColor Green
 
     if ($gpuVendor -eq 'NVIDIA') {
-        return (Invoke-RegistrySetAuto -Title 'Optimize NVIDIA GPU' -Items $nvidiaGpuOptimize -AfterMessage '')
+        return (Invoke-LlcGpuRegistryPreset -Vendor 'NVIDIA' -Title 'Optimize NVIDIA GPU' -Items $nvidiaGpuOptimize -Auto)
     }
 
     if ($gpuVendor -eq 'AMD') {
-        return (Invoke-RegistrySetAuto -Title 'Optimize AMD GPU' -Items $amdGpuOptimize -AfterMessage '')
+        return (Invoke-LlcGpuRegistryPreset -Vendor 'AMD' -Title 'Optimize AMD GPU' -Items $amdGpuOptimize -Auto)
     }
 
     if ($gpuVendor -eq 'BOTH') {
@@ -10237,10 +10336,10 @@ function Invoke-GpuTweaksAuto {
         )
 
         if ($choice -eq 0) {
-            return (Invoke-RegistrySetAuto -Title 'Optimize NVIDIA GPU' -Items $nvidiaGpuOptimize -AfterMessage '')
+            return (Invoke-LlcGpuRegistryPreset -Vendor 'NVIDIA' -Title 'Optimize NVIDIA GPU' -Items $nvidiaGpuOptimize -Auto)
         }
         if ($choice -eq 1) {
-            return (Invoke-RegistrySetAuto -Title 'Optimize AMD GPU' -Items $amdGpuOptimize -AfterMessage '')
+            return (Invoke-LlcGpuRegistryPreset -Vendor 'AMD' -Title 'Optimize AMD GPU' -Items $amdGpuOptimize -Auto)
         }
 
         Write-Host ''
@@ -13753,9 +13852,9 @@ while ($true) {
                         )
 
                         if ($amdGpu -eq 0) {
-                            Invoke-RegistrySet -Title 'Optimize AMD GPU' -Items $amdGpuOptimize -AfterMessage ''
+                            $null = Invoke-LlcGpuRegistryPreset -Vendor 'AMD' -Title 'Optimize AMD GPU' -Items $amdGpuOptimize
                         } elseif ($amdGpu -eq 1) {
-                            Invoke-RegistrySet -Title 'Revert AMD GPU Optimization' -Items $amdGpuRevert -AfterMessage ''
+                            $null = Invoke-LlcGpuRegistryPreset -Vendor 'AMD' -Title 'Revert AMD GPU Optimization' -Items $amdGpuRevert
                         } else {
                             break
                         }
@@ -13769,9 +13868,9 @@ while ($true) {
                         )
 
                         if ($nvidiaGpu -eq 0) {
-                            Invoke-RegistrySet -Title 'Optimize NVIDIA GPU' -Items $nvidiaGpuOptimize -AfterMessage ''
+                            $null = Invoke-LlcGpuRegistryPreset -Vendor 'NVIDIA' -Title 'Optimize NVIDIA GPU' -Items $nvidiaGpuOptimize
                         } elseif ($nvidiaGpu -eq 1) {
-                            Invoke-RegistrySet -Title 'Revert NVIDIA GPU Optimization' -Items $nvidiaGpuRevert -AfterMessage ''
+                            $null = Invoke-LlcGpuRegistryPreset -Vendor 'NVIDIA' -Title 'Revert NVIDIA GPU Optimization' -Items $nvidiaGpuRevert
                         } else {
                             break
                         }
