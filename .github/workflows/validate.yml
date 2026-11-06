@@ -25,6 +25,9 @@ jobs:
             @('### Test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             throw
           }
+      - name: Check GPU targets and preset compatibility without registry writes
+        shell: pwsh
+        run: ./tests/Test-GpuRegistry.ps1
       - name: Check menu layout, navigation and isolated demo
         shell: pwsh
         run: |
@@ -61,6 +64,9 @@ jobs:
             @('### Test failure', '```text', $_.ToString(), $_.ScriptStackTrace, '```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             throw
           }
+      - name: Check GPU targets and preset compatibility without registry writes
+        shell: powershell
+        run: ./tests/Test-GpuRegistry.ps1
       - name: Check menu layout, navigation and isolated demo
         shell: powershell
         run: |

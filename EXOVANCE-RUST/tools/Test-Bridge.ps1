@@ -130,8 +130,19 @@ try {
     }
 } finally {Remove-Item -LiteralPath $temp -Recurse -Force}
 # Build-script generated backend parses, but is never executed by this test.
-$built=@(Get-ChildItem (Join-Path $folder 'target') -Recurse -Filter backend.ps1 | Where-Object {$_.Directory.Name -eq 'out'})
-if($built.Count -eq 0){throw 'Run cargo build/test before Test-Bridge.ps1'}
+# Ask Cargo for this invocation's build-script output. Old debug/release/cross-target
+# directories can survive a cache restore and must not be compared to the new source.
+$buildMessages=@(& cargo test --locked --no-run --message-format=json --manifest-path (Join-Path $folder 'Cargo.toml'))
+if($LASTEXITCODE -ne 0){throw 'Unable to build the current backend for verification'}
+$built=@(foreach($line in $buildMessages) {
+    $event=ConvertFrom-Json -InputObject ([string]$line) -ErrorAction Stop
+    if($event.reason -ne 'build-script-executed' -or -not $event.out_dir){continue}
+    $packageFolder=Split-Path -Leaf (Split-Path -Parent $event.out_dir)
+    if($packageFolder -like 'exovance-*') {
+        Get-Item -LiteralPath (Join-Path $event.out_dir 'backend.ps1') -ErrorAction Stop
+    }
+})
+if($built.Count -ne 1){throw 'Expected exactly one current Exovance backend from Cargo'}
 foreach($file in $built) {
     $t=$null;$e=$null
     $text=[IO.File]::ReadAllText($file.FullName).Replace("`r`n","`n")
