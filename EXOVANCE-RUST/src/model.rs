@@ -53,6 +53,7 @@ pub struct Request {
     pub title: String,
     pub level: String,
     pub entries: Vec<Entry>,
+    pub selected: Option<usize>,
 }
 #[derive(Debug, Default, Serialize)]
 pub struct Reply {
@@ -103,6 +104,16 @@ pub struct Selection {
 impl Selection {
     pub fn reset(&mut self, entries: &[Entry]) {
         self.selected = entries.iter().position(|x| x.selectable);
+    }
+    pub fn restore(&mut self, entries: &[Entry], previous: Option<usize>) {
+        self.selected = previous.and_then(|index| {
+            entries
+                .iter()
+                .position(|e| e.index == index && e.selectable)
+        });
+        if self.selected.is_none() {
+            self.reset(entries);
+        }
     }
     pub fn step(&mut self, entries: &[Entry], delta: isize) {
         let positions: Vec<_> = entries
@@ -164,6 +175,12 @@ mod tests {
         assert_eq!(entries[s.selected.unwrap()].value, "exit");
         s.step(&entries, 1);
         assert_eq!(entries[s.selected.unwrap()].value, "preflight");
+        let autostart = vec![
+            Entry::action(0, "Disable all", "all"),
+            Entry::action(1, "My keyboard app", "one"),
+        ];
+        s.restore(&autostart, Some(1));
+        assert_eq!(autostart[s.selected.unwrap()].value, "one");
     }
     #[test]
     fn empty_menu_and_headers_are_not_actions() {

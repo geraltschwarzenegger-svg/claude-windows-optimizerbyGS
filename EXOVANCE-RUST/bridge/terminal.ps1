@@ -4,22 +4,27 @@ $script:ExovanceRouteUsed = $false
 
 function Send-ExovanceRustMessage {
     param([hashtable]$Message)
-    [Console]::Out.WriteLine($env:EXOVANCE_WIRE_PREFIX + (ConvertTo-Json -InputObject $Message -Depth 14 -Compress))
-    [Console]::Out.Flush()
+    $script:ExovancePipeWriter.WriteLine($env:EXOVANCE_WIRE_PREFIX + (ConvertTo-Json -InputObject $Message -Depth 14 -Compress))
+    $script:ExovancePipeWriter.Flush()
 }
 function Read-ExovanceRustReply {
     param([hashtable]$Message)
     $script:ExovanceWireId++
     $Message.id = $script:ExovanceWireId
     Send-ExovanceRustMessage $Message
-    $line = [Console]::In.ReadLine()
+    $line = $script:ExovancePipeReader.ReadLine()
     if ($null -eq $line) { throw 'Rust frontend disconnected; no further action will be selected.' }
-    $reply = ConvertFrom-Json -InputObject $line -ErrorAction Stop
+    $line = $line.TrimStart([char]0xfeff)
+    try { $reply = ConvertFrom-Json -InputObject $line -ErrorAction Stop }
+    catch {
+        $leading = (($line.ToCharArray() | Select-Object -First 8 | ForEach-Object { 'U+{0:X4}' -f [int]$_ }) -join ' ')
+        throw ('Invalid UTF-8 JSON reply (leading code points: '+$leading+'): '+$_.Exception.Message)
+    }
     if ([int64]$reply.id -ne $script:ExovanceWireId) { throw 'Invalid frontend reply ID.' }
     return $reply
 }
 function Invoke-Menu {
-    param([string]$Title, [AllowEmptyCollection()][object[]]$Items)
+    param([string]$Title, [AllowEmptyCollection()][object[]]$Items, [int]$SelectedIndex=-1)
     $entries = @(Get-LlcMenuEntries -Items $Items)
     if ($Title -eq 'Exovance Optimizer v2') {
         if ($script:ExovanceRouteUsed) { return 'exit' }
@@ -34,7 +39,7 @@ function Invoke-Menu {
         @{index=$_.Index; text=$_.Text; selectable=$_.Selectable; value=$_.Value; help=$help}
     })
     if (@($entries | Where-Object {$_.Selectable}).Count -eq 0) { return -1 }
-    $reply = Read-ExovanceRustReply @{kind='menu'; title=$Title; entries=$wire}
+    $reply = Read-ExovanceRustReply @{kind='menu'; title=$Title; entries=$wire; selected=$(if($SelectedIndex -ge 0){$SelectedIndex}else{$null})}
     if ($reply.cancelled) { return -1 }
     $selected = @($entries | Where-Object {$_.Selectable -and $_.Index -eq [int]$reply.index})
     if ($selected.Count -ne 1) { throw 'Invalid or non-selectable frontend entry.' }
@@ -62,6 +67,7 @@ function Write-StatusLine {
 }
 function Invoke-AutostartFullListMenu {
     param([string]$Title, [AllowEmptyCollection()][object[]]$Items)
+    $selectedIndex=-1
     while ($true) {
         $entries=@([pscustomobject]@{Type='DisableAll'; Item=$null})
         $entries+=@($Items | ForEach-Object {[pscustomobject]@{Type='Item';Item=$_}})
@@ -73,8 +79,9 @@ function Invoke-AutostartFullListMenu {
             [pscustomobject]@{Text=$text;Value=$i;RustHelp=(Get-LlcAutostartHelp -Entry $entry)}
         })
         $choices+=[pscustomobject]@{Text='Back';Value=-1}
-        $selection=Invoke-Menu -Title $Title -Items $choices
+        $selection=Invoke-Menu -Title $Title -Items $choices -SelectedIndex $selectedIndex
         if($selection -lt 0){return}
+        $selectedIndex=[int]$selection
         $entry=$entries[$selection]
         if($entry.Type -eq 'DisableAll') {
             foreach($item in $Items) {

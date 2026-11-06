@@ -4,8 +4,10 @@ fn main() {
     let base = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let cmd = base.join("../Low-Latency-Corp-Menu_v2.cmd");
     let bridge = base.join("bridge/terminal.ps1");
+    let transport = base.join("bridge/transport.ps1");
     println!("cargo:rerun-if-changed={}", cmd.display());
     println!("cargo:rerun-if-changed={}", bridge.display());
+    println!("cargo:rerun-if-changed={}", transport.display());
     let source = fs::read_to_string(cmd)
         .expect("Read the distributed CMD as UTF-8")
         .replace("\r\n", "\n");
@@ -21,7 +23,10 @@ fn main() {
         .expect("Reviewed main menu");
     // UI overrides run after the function declarations. Do not start TrustedInstaller at startup.
     // Existing per-action permission fallback remains owned by the original action functions.
-    let bootstrap = "[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Text.UTF8Encoding]::new($false)\n";
+    let bootstrap = fs::read_to_string(transport)
+        .unwrap()
+        .trim_start_matches('\u{feff}')
+        .to_string();
     let legacy_prefix = &payload[..start];
     let trap_start = legacy_prefix
         .find("\ntrap {\n    $err = $_")
@@ -34,8 +39,8 @@ fn main() {
     let fatal_trap = r#"
 trap {
     $detail = $_.Exception.ToString() + [Environment]::NewLine + $_.ScriptStackTrace
-    [Console]::Out.WriteLine($env:EXOVANCE_WIRE_PREFIX + (ConvertTo-Json -Compress -InputObject @{kind='status';level='error';title=$detail}))
-    [Console]::Out.Flush()
+    $script:ExovancePipeWriter.WriteLine($env:EXOVANCE_WIRE_PREFIX + (ConvertTo-Json -Compress -InputObject @{kind='status';level='error';title=$detail}))
+    $script:ExovancePipeWriter.Flush()
     exit 1
 }
 "#;

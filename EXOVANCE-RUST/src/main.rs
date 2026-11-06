@@ -90,8 +90,12 @@ fn run_section(ui: &mut ui::Ui, root: &Path, route: &str, log: &mut Journal) -> 
                             continue;
                         }
                         "menu" => {
-                            let selection =
-                                ui.choose(&request.title, &request.entries, &status(log))?;
+                            let selection = ui.choose_at(
+                                &request.title,
+                                &request.entries,
+                                &status(log),
+                                request.selected,
+                            )?;
                             reply.cancelled = selection.is_none();
                             reply.index = selection.unwrap_or(0);
                             log.event(

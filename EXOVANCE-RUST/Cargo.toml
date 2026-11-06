@@ -16,6 +16,7 @@ dunce = "1"
 ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+unicode-width = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [target.'cfg(windows)'.dependencies]

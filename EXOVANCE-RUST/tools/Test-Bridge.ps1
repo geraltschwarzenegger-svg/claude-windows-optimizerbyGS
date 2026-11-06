@@ -1,6 +1,14 @@
 ﻿# Real pipe transport tests in PowerShell 7 / Windows PowerShell 5.1.
 # Only extracted UI helpers and mocked actions are executed; never load the legacy application.
 $ErrorActionPreference='Stop'
+trap {
+    $record=$_
+    $message=($record.Exception.Message -replace '[\r\n]+',' ')
+    Write-Host ('::error title=PowerShell pipe transport::{0}' -f $message)
+    Write-Host $record.ScriptStackTrace
+    if($env:GITHUB_STEP_SUMMARY){@('### Pipe transport failure','```text',$record.ToString(),$record.ScriptStackTrace,'```') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append}
+    exit 1
+}
 $folder=Split-Path -Parent $PSScriptRoot
 $repo=Split-Path -Parent $folder
 $source=[IO.File]::ReadAllText((Join-Path $repo 'Low-Latency-Corp-Menu_v2.cmd')).Replace("`r`n","`n")
@@ -16,10 +24,9 @@ $definitions=@(foreach($name in $helpers){
     $fn.Extent.Text
 }) -join "`n"
 $bridge=[IO.File]::ReadAllText((Join-Path $folder 'bridge/terminal.ps1')).TrimStart([char]0xfeff)
-$fixture=@'
+$transport=[IO.File]::ReadAllText((Join-Path $folder 'bridge/transport.ps1')).TrimStart([char]0xfeff)
+$fixture=$transport+"`n"+@'
 $ErrorActionPreference='Stop'
-[Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
-[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $env:EXOVANCE_WIRE_PREFIX='@EXOVANCE-TEST@ '
 $env:EXOVANCE_ROUTE='uac'
 function Test-Admin {return $true}
@@ -49,13 +56,14 @@ $null=[IO.Directory]::CreateDirectory($temp)
 try {
     $path=Join-Path $temp 'fixture.ps1'
     [IO.File]::WriteAllText($path,$fixture,[Text.UTF8Encoding]::new($true))
-    foreach($mode in @('valid','wrong-id','header','eof')) {
+    foreach($mode in @('valid','bom','wrong-id','header','eof')) {
         $info=New-Object Diagnostics.ProcessStartInfo
         $info.FileName=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
         $info.Arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "'+$path+'"'
         $info.UseShellExecute=$false;$info.CreateNoWindow=$true
         $info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
         $info.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+        $info.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
         $process=New-Object Diagnostics.Process
         $process.StartInfo=$info
         $null=$process.Start()
@@ -76,7 +84,7 @@ try {
                 $reply=@{id=$request.id;index=0;cancelled=$false;text=''}
                 if($mode -eq 'wrong-id'){$reply.id=999}
                 if($mode -eq 'header'){$reply.index=1}
-                if($mode -eq 'valid') {
+                if($mode -in @('valid','bom')) {
                     switch($request.id) {
                         1 {$reply.index=0}
                         2 {$reply.cancelled=$true}
@@ -84,20 +92,32 @@ try {
                         4 {$reply.cancelled=$true}
                         5 { }
                         6 {$reply.index=1}
-                        7 {$reply.index=2}
+                        7 {
+                            if($null -eq $request.selected -or $request.selected -ne 1){throw 'Autostart focus jumped to Disable all after a toggle'}
+                            $reply.index=[int]$request.selected
+                        }
+                        8 {
+                            if($request.selected -ne 1){throw 'Autostart focus not preserved after reversing the toggle'}
+                            $reply.index=2
+                        }
                         default {throw ('Unexpected request '+$request.id)}
                     }
+                }
+                if($mode -eq 'bom' -and $requests -eq 1) {
+                    $bom=[byte[]]@(239,187,191)
+                    $writer.BaseStream.Write($bom,0,$bom.Length)
+                    $writer.BaseStream.Flush()
                 }
                 $writer.WriteLine((ConvertTo-Json -Compress -InputObject $reply))
                 $writer.Flush()
             }
             if(-not $process.WaitForExit(10000)){throw 'Fixture did not exit'}
             $errorText=$process.StandardError.ReadToEnd()
-            if($mode -eq 'valid') {
+            if($mode -in @('valid','bom')) {
                 if($process.ExitCode -ne 0 -or $null -eq $result){throw ('Fixture failed: '+$errorText)}
                 if($result.root -cne 'uac' -or $result.rootAfter -cne 'exit' -or $result.first -ne 17 -or $result.cancel -ne -1){throw 'Typed navigation values changed'}
                 if($result.text -cne 'Тест & ; $() без выполнения' -or $result.confirm){throw 'Input changed or Auto confirmation bypassed'}
-                if($result.touches -ne 1 -or $result.enabled -or $requests -ne 7 -or $errors -ne 1){throw 'Autostart mock or typed error reporting failed'}
+                if($result.touches -ne 2 -or -not $result.enabled -or $requests -ne 8 -or $errors -ne 1){throw 'Autostart mock or typed error reporting failed'}
             } else {
                 if($process.ExitCode -eq 0 -or $null -ne $result){throw ('Invalid reply did not stop execution: '+$mode)}
             }

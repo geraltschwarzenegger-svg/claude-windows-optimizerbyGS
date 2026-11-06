@@ -7,13 +7,14 @@ use crossterm::{
 };
 use ratatui::{
     backend::{CrosstermBackend, TestBackend},
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io::{self, IsTerminal, Stdout};
+use unicode_width::UnicodeWidthStr;
 const BG: Color = Color::Rgb(12, 18, 29);
 const PANEL: Color = Color::Rgb(18, 28, 42);
 const MINT: Color = Color::Rgb(73, 226, 190);
@@ -34,6 +35,18 @@ enum BodyMode {
     Busy,
 }
 
+fn screen_areas(area: Rect) -> std::rc::Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(3),
+            Constraint::Length(4),
+        ])
+        .margin(1)
+        .split(area)
+}
+
 fn frame(
     f: &mut Frame,
     title: &str,
@@ -47,15 +60,7 @@ fn frame(
         Block::default().style(Style::default().bg(BG).fg(TEXT)),
         f.area(),
     );
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(3),
-            Constraint::Length(4),
-        ])
-        .margin(1)
-        .split(f.area());
+    let rows = screen_areas(f.area());
     f.render_widget(
         Paragraph::new(vec![
             Line::from(vec![
@@ -143,6 +148,41 @@ fn frame(
         panes[1],
     );
 }
+fn input_frame(f: &mut Frame, title: &str, context: &str, input: &str, scroll: u16) {
+    frame(
+        f,
+        title,
+        &[],
+        None,
+        "Enter отправить · Esc отменить · PgUp/PgDn контекст",
+        Some(("", BodyMode::Input)),
+        0,
+    );
+    let body = screen_areas(f.area())[1];
+    let parts = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .split(body);
+    f.render_widget(
+        Paragraph::new(model::clean(context))
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0))
+            .block(block(" Контекст · PgUp/PgDn ")),
+        parts[0],
+    );
+    let field = block(" Ответ ").border_style(Style::default().fg(MINT));
+    let width = field.inner(parts[1]).width;
+    let line = format!("> {}▏", model::clean(input));
+    let offset = UnicodeWidthStr::width(line.as_str()).saturating_sub(width as usize) as u16;
+    f.render_widget(
+        Paragraph::new(line)
+            .scroll((0, offset))
+            .block(field)
+            .style(Style::default().fg(MINT)),
+        parts[1],
+    );
+}
+
 struct ScreenGuard;
 impl Drop for ScreenGuard {
     fn drop(&mut self) {
@@ -174,8 +214,17 @@ impl Ui {
         entries: &[Entry],
         status: &str,
     ) -> Result<Option<usize>> {
+        self.choose_at(title, entries, status, None)
+    }
+    pub fn choose_at(
+        &mut self,
+        title: &str,
+        entries: &[Entry],
+        status: &str,
+        selected: Option<usize>,
+    ) -> Result<Option<usize>> {
         let mut state = Selection::default();
-        state.reset(entries);
+        state.restore(entries, selected);
         loop {
             self.terminal
                 .draw(|f| frame(f, title, entries, state.selected, status, None, 0))?;
@@ -250,18 +299,10 @@ impl Ui {
     }
     pub fn input(&mut self, title: &str, context: &str) -> Result<Option<String>> {
         let mut input = String::new();
+        let mut scroll = 0u16;
         loop {
-            self.terminal.draw(|f| {
-                frame(
-                    f,
-                    title,
-                    &[],
-                    None,
-                    "Enter отправить · Esc отменить",
-                    Some((&format!("{context}\n\n> {input}"), BodyMode::Input)),
-                    0,
-                )
-            })?;
+            self.terminal
+                .draw(|f| input_frame(f, title, context, &input, scroll))?;
             let Event::Key(key) = event::read()? else {
                 continue;
             };
@@ -271,6 +312,9 @@ impl Ui {
             match key.code {
                 KeyCode::Enter if key.kind == KeyEventKind::Press => return Ok(Some(input)),
                 KeyCode::Esc => return Ok(None),
+                KeyCode::PageUp => scroll = scroll.saturating_sub(8),
+                KeyCode::PageDown => scroll = scroll.saturating_add(8),
+                KeyCode::Home => scroll = 0,
                 KeyCode::Backspace => {
                     input.pop();
                 }
@@ -364,5 +408,29 @@ mod tests {
             )
         })
         .unwrap();
+    }
+    #[test]
+    fn answer_stays_visible_with_a_long_prompt_and_unicode() {
+        let mut t = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        let context = "Очень длинное описание изменений и путей реестра.\n".repeat(100);
+        for answer in [
+            "ПРИМЕНИТЬ".to_string(),
+            format!("{}КОНЕЦ", "界".repeat(200)),
+        ] {
+            t.draw(|f| input_frame(f, "Подтверждение", &context, &answer, 40))
+                .unwrap();
+            let buffer = t.backend().buffer();
+            let lines = (0..20)
+                .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>();
+            let visible = lines.join("\n");
+            assert!(visible.contains("Ответ"));
+            assert!(visible.contains("▏"));
+            assert!(visible.contains(if answer.ends_with("КОНЕЦ") {
+                "КОНЕЦ"
+            } else {
+                "ПРИМЕНИТЬ"
+            }));
+        }
     }
 }
