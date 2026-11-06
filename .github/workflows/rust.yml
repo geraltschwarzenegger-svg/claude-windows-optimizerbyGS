@@ -1,0 +1,72 @@
+name: Validate and build Exovance Rust
+on:
+  push:
+    paths:
+      - 'EXOVANCE-RUST/**'
+      - 'Low-Latency-Corp-Menu_v2.cmd'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'EXOVANCE-RUST/**'
+      - 'Low-Latency-Corp-Menu_v2.cmd'
+      - '.github/workflows/rust.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: EXOVANCE-RUST
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: EXOVANCE-RUST
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Check Rust code
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test routing, UI, transport and native power plans with mocks
+        run: cargo test --locked
+      - name: Verify catalog matches all current CMD sections
+        shell: pwsh
+        run: ./tools/Export-Catalog.ps1 -Check
+      - name: Test the real PowerShell pipe protocol without system changes
+        if: runner.os != 'Windows'
+        shell: pwsh
+        run: ./tools/Test-Bridge.ps1
+      - name: Test Windows PowerShell 5.1 transport without system changes
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tools/Test-Bridge.ps1
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Validate read-only preview and host check
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+          ./target/release/exovance.exe --snapshot --width 80 --height 30 | Out-File preview.txt -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Snapshot failed' }
+          ./target/release/exovance.exe --check --root ..
+          if ($LASTEXITCODE -ne 0) { throw 'Windows host / payload check failed' }
+      - name: Package Windows menu and notices
+        if: runner.os == 'Windows'
+        run: python tools/Package-Release.py --executable target/release/exovance.exe --output target/Exovance-Rust-Windows-x64.zip --target x86_64-pc-windows-msvc --with-resources
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: Exovance-Rust-Windows-x64
+          path: |
+            EXOVANCE-RUST/target/Exovance-Rust-Windows-x64.zip
+            EXOVANCE-RUST/target/Exovance-Rust-Windows-x64.zip.sha256
+          if-no-files-found: error

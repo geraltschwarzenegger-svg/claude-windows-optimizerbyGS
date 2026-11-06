@@ -1,0 +1,439 @@
+[
+  {
+    "index": 0,
+    "text": "Preflight / About v2",
+    "selectable": true,
+    "value": "preflight",
+    "help": {
+      "Topic": "preflight",
+      "Summary": "Проверка запуска: версия PowerShell, разрядность и наличие файлов.",
+      "Effect": "Откроет отчёт. Настройки системы не применяются.",
+      "Where": "Реестр не изменяется.",
+      "Recommendation": "Начни с этого пункта после распаковки программы.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 1,
+    "text": "System and registry",
+    "selectable": false,
+    "value": 1,
+    "help": {
+      "Topic": "",
+      "Summary": "Выбранный пункт меню.",
+      "Effect": "Enter откроет пункт или выполнит указанное действие.",
+      "Where": "Место изменения зависит от выбранного действия.",
+      "Recommendation": "Сначала прочитай описание действия. F1 открывает полную справку.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 2,
+    "text": "Auto Registry Tweaks",
+    "selectable": true,
+    "value": "autoRegistryTweaks",
+    "help": {
+      "Topic": "autoRegistryTweaks",
+      "Summary": "Общий пресет: UAC, службы, QOL, сеть, GPU, питание и другие настройки.",
+      "Effect": "После ввода AUTO применяет весь набор, включая отключение UAC и OneDrive.",
+      "Where": "Несколько веток HKLM, HKCU и профилей HKU; также powercfg и другие действия.",
+      "Recommendation": "Сначала изучи отдельные разделы и подготовь backup: полного общего отката нет.",
+      "Details": [
+        "Это широкий пресет, а не автоматическое определение лучших настроек для твоего ПК.",
+        "В текущем Auto: HAGS включается, FSO/Game Bar/Game Mode и UAC отключаются. Рекомендации отдельных разделов не меняют этот готовый пресет.",
+        "Ниже перечислена фиксированная часть записей. QOL, питание, динамический выбор MMCSS/GPU и внешний профиль NVIDIA описаны в своих разделах.",
+        "Открытие справки и перемещение по меню не запускают Auto. Подтверждение AUTO остаётся отдельным шагом."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [
+        "uacDisable",
+        "hagsEnable",
+        "fsoDisable",
+        "gameBarDisable",
+        "gameModeDisable",
+        "servicesToDisable",
+        "win32PrioritySeparation18Hex",
+        "clockInterruptsCore0"
+      ],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 3,
+    "text": "UAC",
+    "selectable": true,
+    "value": "uac",
+    "help": {
+      "Topic": "uac",
+      "Summary": "UAC запрашивает подтверждение повышения прав администратора.",
+      "Effect": "Enable включает UAC; Disable отключает его и меняет связанные политики.",
+      "Where": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "Recommendation": "Для обычного использования рекомендую Enable. Отключение не гарантирует прирост FPS.",
+      "Details": [
+        "Отключение уменьшает защиту от незаметного повышения прав; некоторые приложения и функции Windows могут зависеть от UAC.",
+        "Enable применяет заданный в меню набор значений, а не восстанавливает индивидуальные прежние настройки."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 4,
+    "text": "QOL",
+    "selectable": true,
+    "value": "qol",
+    "help": {
+      "Topic": "qol",
+      "Summary": "Удобство Windows: Проводник, уведомления, OneDrive, панель задач и профили пользователей.",
+      "Effect": "Optimize после ввода QOL применяет широкий набор, включая другие и Default-профили.",
+      "Where": "HKCU/HKU: Software\\Microsoft\\Windows\\CurrentVersion\\Explorer и политики; HKLM: политики Windows/OneDrive.",
+      "Recommendation": "Прочитай полный состав до QOL: меняются привычные функции и закрепления панели задач.",
+      "Details": [
+        "OneDrive отключается; история Проводника очищается; закрепления панели задач заменяются набором с Проводником.",
+        "Часть настроек применяется через SystemParametersInfo и файлы разметки панели задач. Не все изменения являются записями реестра.",
+        "QOL — пресет удобства. Его полный индивидуальный откат через меню не предусмотрен."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 5,
+    "text": "Fullscreen Optimization",
+    "selectable": true,
+    "value": "fullscreenOptimization",
+    "help": {
+      "Topic": "fullscreenOptimization",
+      "Summary": "FSO — механизм полноэкранного режима Windows для совместимости и презентации кадров.",
+      "Effect": "Enable/Disable записывает глобальный пользовательский пресет GameConfigStore.",
+      "Where": "HKCU\\System\\GameConfigStore",
+      "Recommendation": "Начни с Enable. Disable проверяй для конкретной игры при воспроизводимой проблеме.",
+      "Details": [
+        "Это пользовательские параметры совместимости. Их фактическое влияние зависит от Windows, игры и графического API.",
+        "Пункт не ставит индивидуальный флажок совместимости у каждого EXE и не доказывает режим конкретной игры."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 6,
+    "text": "Gamebar and Game Mode",
+    "selectable": true,
+    "value": "gamebarAndGameMode",
+    "help": {
+      "Topic": "gamebarAndGameMode",
+      "Summary": "Game Bar отвечает за захват и запись; Game Mode — за игровой режим Windows.",
+      "Effect": "Выбери отдельно запись Game Bar или Game Mode: это разные функции.",
+      "Where": "HKCU\\SOFTWARE\\Microsoft\\GameBar; HKCU\\...\\GameDVR; HKCU\\System\\GameConfigStore; HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR",
+      "Recommendation": "Game Mode обычно рекомендую включить. Захват Game Bar — только если нужен.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 7,
+    "text": "Services",
+    "selectable": true,
+    "value": "services",
+    "help": {
+      "Topic": "services",
+      "Summary": "Службы — фоновые компоненты Windows и устройств.",
+      "Effect": "Disable services задаёт Start=4 всему списку. Enable применяет таблицу Start из программы.",
+      "Where": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\<имя службы> | Start",
+      "Recommendation": "Оставь штатные службы, если нет конкретной задачи. Общий пресет может убрать нужные функции.",
+      "Details": [
+        "В списке есть службы поиска, печати, ввода, удалённого доступа и другие компоненты. Часть функций может перестать работать.",
+        "Start: 0=Boot, 1=System, 2=автоматически, 3=вручную, 4=отключено. Изменение Start не всегда немедленно останавливает уже работающую службу.",
+        "Enable — фиксированные значения из кода, а не резервная копия прежнего состояния."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 8,
+    "text": "Powersaving",
+    "selectable": true,
+    "value": "powersaving",
+    "help": {
+      "Topic": "powersaving",
+      "Summary": "Энергосбережение устройств: разрешение отключать устройства и связанные параметры питания.",
+      "Effect": "Disable device powersaving запускает встроенный сценарий отключения энергосбережения устройств.",
+      "Where": "Параметры PnP-устройств через Windows/WMI и реестр; конкретные экземпляры определяются при запуске.",
+      "Recommendation": "Применяй при проблемах пробуждения/отключения устройств. На ноутбуке учитывай расход батареи.",
+      "Details": [
+        "У всех устройств нет одного общего ключа. Набор определяется обнаруженными устройствами и возможностями драйверов.",
+        "Отключение энергосбережения не гарантирует меньшую задержку и может увеличить потребление."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 9,
+    "text": "Network Optimization",
+    "selectable": true,
+    "value": "networkOptimization",
+    "help": {
+      "Topic": "networkOptimization",
+      "Summary": "Пресет для проводного Ethernet: offload, RSS, модерация прерываний, буферы и питание.",
+      "Effect": "Enable также отключает энергосбережение. Disable удаляет заданные сетевые параметры.",
+      "Where": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\<адаптер>; Services\\NDIS\\Parameters",
+      "Recommendation": "Если сеть работает стабильно, начни с текущих настроек. Пресет сравнивай на своём адаптере.",
+      "Details": [
+        "Примеры из Enable: *RSS=1, *NumRssQueues=1, *InterruptModeration=0, *ReceiveBuffers=4096, *TransmitBuffers=4096. Поддержка зависит от драйвера.",
+        "Disable удаляет записанные сетевые параметры; он не возвращает индивидуальные прежние значения и не обещает отменить отдельный этап отключения энергосбережения.",
+        "Номер подраздела адаптера зависит от установленного оборудования. Изменение реестра не доказывает, что драйвер принял каждый параметр; может потребоваться перезапуск."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 10,
+    "text": "MMCSS",
+    "selectable": true,
+    "value": "mmcss",
+    "help": {
+      "Topic": "mmcss",
+      "Summary": "MMCSS помогает планировать мультимедийную работу, в том числе звук.",
+      "Effect": "Enable/Disable меняет запуск службы; Optimize и Fix Audio Stutters применяют отдельные пресеты.",
+      "Where": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MMCSS; HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile",
+      "Recommendation": "Для обычной работы оставь MMCSS включённым. Звуковой пресет проверяй при реальных прерываниях звука.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 11,
+    "text": "Win32PrioritySeparation",
+    "selectable": true,
+    "value": "win32PrioritySeparation",
+    "help": {
+      "Topic": "win32PrioritySeparation",
+      "Summary": "Параметр планировщика CPU, связанный с квантами и обработкой активных приложений.",
+      "Effect": "18 (hex) записывает Win32PrioritySeparation=0x18, то есть 24 в десятичном виде.",
+      "Where": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl | Win32PrioritySeparation",
+      "Recommendation": "Оставь текущий режим без конкретной причины. Этот пресет не является универсальным ускорением.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 12,
+    "text": "Clock Interrupts",
+    "selectable": true,
+    "value": "clockInterrupts",
+    "help": {
+      "Topic": "clockInterrupts",
+      "Summary": "Пункт с параметром сериализации истечения таймеров ядра Windows.",
+      "Effect": "Core 0 записывает SerializeTimerExpiration=1.",
+      "Where": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel | SerializeTimerExpiration",
+      "Recommendation": "Экспериментальный пункт: оставь текущую настройку, если нет отдельного теста.",
+      "Details": [
+        "Название Core 0 не является проверкой фактической маршрутизации всех IRQ или DPC. Это отдельный параметр таймеров, а не GPU/USB affinity."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 13,
+    "text": "Hardware-Accelerated GPU Scheduling",
+    "selectable": true,
+    "value": "hags",
+    "help": {
+      "Topic": "hags",
+      "Summary": "HAGS — аппаратное планирование GPU; поддержку определяют Windows, GPU и драйвер.",
+      "Effect": "Enable записывает HwSchMode=2, Disable — HwSchMode=1. Нужна перезагрузка для проверки.",
+      "Where": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers | HwSchMode",
+      "Recommendation": "Сравни оба режима в своей игре; для Frame Generation проверь требования игры.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 14,
+    "text": "GPU",
+    "selectable": true,
+    "value": "gpu",
+    "help": {
+      "Topic": "gpu",
+      "Summary": "Раздел видеокарты: выбор NVIDIA/AMD и переход к настройкам или драйверам.",
+      "Effect": "Выбор производителя открывает следующее меню; оптимизация выполняется отдельным пунктом.",
+      "Where": "У пресетов: HKLM\\SYSTEM\\ControlSet001\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000; у установки — отдельный установщик.",
+      "Recommendation": "Сначала проверь производителя и конкретное действие. Установка драйвера и пресет — разные операции.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 15,
+    "text": "Drivers and apps",
+    "selectable": false,
+    "value": 15,
+    "help": {
+      "Topic": "",
+      "Summary": "Выбранный пункт меню.",
+      "Effect": "Enter откроет пункт или выполнит указанное действие.",
+      "Where": "Место изменения зависит от выбранного действия.",
+      "Recommendation": "Сначала прочитай описание действия. F1 открывает полную справку.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 16,
+    "text": "Drivers",
+    "selectable": true,
+    "value": "drivers",
+    "help": {
+      "Topic": "drivers",
+      "Summary": "Установка/загрузка драйверов и запуск средств очистки установочных пакетов.",
+      "Effect": "Enter открывает подменю либо запускает выбранный установщик/загрузку.",
+      "Where": "Установщик управляет драйверами и их ключами. Единого ключа реестра у этого действия нет.",
+      "Recommendation": "Сверь модель GPU, Windows и версию: пакет из меню может быть старее уже установленного.",
+      "Details": [
+        "DDU предназначен для удаления драйверов при необходимости; не запускай очистку как обязательный шаг перед каждым обновлением.",
+        "Названия и версии встроенных пакетов фиксированы в меню; справка не проверяет свежесть драйвера в интернете."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 17,
+    "text": "Apps",
+    "selectable": true,
+    "value": "apps",
+    "help": {
+      "Topic": "apps",
+      "Summary": "Запуск дополнительных программ и установщиков из проекта.",
+      "Effect": "Сначала выбери программу. Применение настроек выполняется уже её отдельным пунктом.",
+      "Where": "Пути в Resources и DEVICE-TWEAKER-V2. Изменения внешней программы зависят от неё.",
+      "Recommendation": "Запускай нужную утилиту под конкретную задачу; установка всех программ не требуется.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 18,
+    "text": "Other",
+    "selectable": false,
+    "value": 18,
+    "help": {
+      "Topic": "",
+      "Summary": "Выбранный пункт меню.",
+      "Effect": "Enter откроет пункт или выполнит указанное действие.",
+      "Where": "Место изменения зависит от выбранного действия.",
+      "Recommendation": "Сначала прочитай описание действия. F1 открывает полную справку.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 19,
+    "text": "Autostart",
+    "selectable": true,
+    "value": "autostart",
+    "help": {
+      "Topic": "autostart",
+      "Summary": "Список программ, запускаемых при входе, и задач автозапуска.",
+      "Effect": "В отдельном списке Enter переключает выбранную запись. Режим Disable all затрагивает все доступные записи.",
+      "Where": "Run/RunOnce и StartupApproved в HKCU/HKLM; папки Startup и задачи планировщика.",
+      "Recommendation": "Отключай только узнаваемые ненужные программы. Не отключай всё подряд.",
+      "Details": [
+        "Автозапуск может обеспечивать работу звука, периферии, синхронизации и других нужных функций.",
+        "У записей файловой папки Startup и задач планировщика нет одного общего значения реестра."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 20,
+    "text": "Power Plan",
+    "selectable": true,
+    "value": "powerPlan",
+    "help": {
+      "Topic": "powerPlan",
+      "Summary": "Схема питания управляет политиками энергопотребления Windows.",
+      "Effect": "Import and Activate импортирует POWER-PLAN\\EXOVANCE.pow и активирует Exovance v2 через powercfg.",
+      "Where": "Управление через powercfg; GUID схемы: 8b24b027-1dee-4c65-8f35-5d5d91e51d87.",
+      "Recommendation": "Сначала сохрани GUID текущей схемы: powercfg /getactivescheme. На ноутбуке проверь нагрев и батарею.",
+      "Details": [
+        "Схема применяется командой powercfg, а не одним значением реестра. Вернуться к прежней можно через powercfg /setactive <GUID>.",
+        "Схема получает имя Exovance v2 и описание Made by Exovance, включая уже установленную схему. Её эффекты определяются содержимым файла .pow."
+      ],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 21,
+    "text": "Activate Windows",
+    "selectable": true,
+    "value": "activateWindows",
+    "help": {
+      "Topic": "activateWindows",
+      "Summary": "Запуск отдельного файла активации Windows из Resources.",
+      "Effect": "Activate WIN запускает ACTIVATE-WINDOWS.bat; содержание зависит от этого файла.",
+      "Where": "Resources\\ACTIVATE-WINDOWS\\ACTIVATE-WINDOWS.bat. Внешний сценарий не описан одной записью реестра.",
+      "Recommendation": "Для активации используй действующую лицензию и средства Windows. Это не настройка FPS или задержки.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  },
+  {
+    "index": 22,
+    "text": "Exit",
+    "selectable": true,
+    "value": "exit",
+    "help": {
+      "Topic": "exit",
+      "Summary": "Выход из меню.",
+      "Effect": "Закрывает меню.",
+      "Where": "Новые изменения не выполняются.",
+      "Recommendation": "Уже применённые настройки сохраняются; выход их не отменяет.",
+      "Details": [],
+      "RegistryLines": [],
+      "RegistryVariables": [],
+      "Usage": "Стрелки выбирают пункт. Enter открывает/применяет. F1 — справка. Esc — назад. В справке Enter только закрывает её."
+    }
+  }
+]
