@@ -138,15 +138,16 @@ $manifest=Join-Path $folder 'Cargo.toml'
 if($LASTEXITCODE -ne 0){throw 'Unable to clean the Exovance package build artifacts'}
 $buildMessages=@(& cargo test --locked --no-run --message-format=json --manifest-path $manifest)
 if($LASTEXITCODE -ne 0){throw 'Unable to build the current backend for verification'}
-$built=@(foreach($line in $buildMessages) {
-    $event=ConvertFrom-Json -InputObject ([string]$line) -ErrorAction Stop
-    if($event.reason -ne 'build-script-executed' -or -not $event.out_dir){continue}
-    $packageFolder=Split-Path -Leaf (Split-Path -Parent $event.out_dir)
-    if($packageFolder -like 'exovance-*') {
-        Get-Item -LiteralPath (Join-Path $event.out_dir 'backend.ps1') -ErrorAction Stop
-    }
-})
-if($built.Count -ne 1){throw 'Expected exactly one current Exovance backend from Cargo'}
+# Cargo can omit build-script-executed events if its fingerprints consider the
+# build script up-to-date. Resolve the actual generated file on disk instead.
+# Only inspect the target/debug/build/exovance-*/out/backend.ps1 artifact,
+# not stale release builds or other tools' similarly named files.
+$metadata=(& cargo metadata --locked --no-deps --format-version 1 --manifest-path $manifest | ConvertFrom-Json)
+if($LASTEXITCODE -ne 0){throw 'Unable to resolve Cargo target directory'}
+$buildDir=Join-Path ([string]$metadata.target_directory) 'debug/build'
+$built=@(Get-ChildItem -LiteralPath $buildDir -Recurse -File -Filter 'backend.ps1' -ErrorAction Stop |
+    Where-Object { $_.FullName -match '[/\\]exovance-[^/\\]+[/\\]out[/\\]backend\.ps1$' })
+if($built.Count -ne 1){throw ('Expected one generated debug backend.ps1, found '+$built.Count+' in '+$buildDir)}
 foreach($file in $built) {
     $t=$null;$e=$null
     $text=[IO.File]::ReadAllText($file.FullName).Replace("`r`n","`n")
