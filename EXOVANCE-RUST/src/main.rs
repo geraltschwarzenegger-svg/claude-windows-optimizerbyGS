@@ -38,9 +38,17 @@ struct Args {
     check: bool,
     #[arg(long, help = "Список всех разделов в JSON, без изменения настроек")]
     list: bool,
-    #[arg(long, help = "Диагностика ресурсов и схем питания в JSON; без применения настроек")]
+    #[arg(
+        long,
+        help = "Диагностика ресурсов и схем питания в JSON; без применения настроек"
+    )]
     diagnose: bool,
-    #[arg(long, requires = "diagnose", value_name = "ABSOLUTE_JSON_PATH", help = "Сохранить диагностический отчёт в новый JSON-файл (без перезаписи)")]
+    #[arg(
+        long,
+        requires = "diagnose",
+        value_name = "ABSOLUTE_JSON_PATH",
+        help = "Сохранить диагностический отчёт в новый JSON-файл (без перезаписи)"
+    )]
     diagnose_output: Option<PathBuf>,
     #[arg(
         long,
@@ -300,10 +308,16 @@ fn main() -> std::process::ExitCode {
     }
 }
 fn run(mut args: Args) -> Result<u8> {
-    if [args.demo, args.snapshot, args.check, args.list, args.diagnose]
-        .into_iter()
-        .filter(|x| *x)
-        .count()
+    if [
+        args.demo,
+        args.snapshot,
+        args.check,
+        args.list,
+        args.diagnose,
+    ]
+    .into_iter()
+    .filter(|x| *x)
+    .count()
         > 1
     {
         bail!("Используй один режим: --demo, --snapshot, --check, --list или --diagnose.");
