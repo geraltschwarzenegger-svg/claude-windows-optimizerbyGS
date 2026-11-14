@@ -130,9 +130,13 @@ try {
     }
 } finally {Remove-Item -LiteralPath $temp -Recurse -Force}
 # Build-script generated backend parses, but is never executed by this test.
-# Ask Cargo for this invocation's build-script output. Old debug/release/cross-target
-# directories can survive a cache restore and must not be compared to the new source.
-$buildMessages=@(& cargo test --locked --no-run --message-format=json --manifest-path (Join-Path $folder 'Cargo.toml'))
+# Cargo may reuse a fresh-enough build script from cache without emitting a
+# build-script-executed JSON event. Clean only the Exovance package first, so
+# the following invocation always emits exactly its newly built backend.
+$manifest=Join-Path $folder 'Cargo.toml'
+& cargo clean --package exovance --manifest-path $manifest
+if($LASTEXITCODE -ne 0){throw 'Unable to clean the Exovance package build artifacts'}
+$buildMessages=@(& cargo test --locked --no-run --message-format=json --manifest-path $manifest)
 if($LASTEXITCODE -ne 0){throw 'Unable to build the current backend for verification'}
 $built=@(foreach($line in $buildMessages) {
     $event=ConvertFrom-Json -InputObject ([string]$line) -ErrorAction Stop
