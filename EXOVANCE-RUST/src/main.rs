@@ -1,4 +1,5 @@
 mod backend;
+mod diagnostics;
 mod host;
 mod journal;
 mod model;
@@ -37,6 +38,18 @@ struct Args {
     check: bool,
     #[arg(long, help = "Список всех разделов в JSON, без изменения настроек")]
     list: bool,
+    #[arg(
+        long,
+        help = "Диагностика ресурсов и схем питания в JSON; без применения настроек"
+    )]
+    diagnose: bool,
+    #[arg(
+        long,
+        requires = "diagnose",
+        value_name = "ABSOLUTE_JSON_PATH",
+        help = "Сохранить диагностический отчёт в новый JSON-файл (без перезаписи)"
+    )]
+    diagnose_output: Option<PathBuf>,
     #[arg(
         long,
         help = "Каталог комплекта с Resources, DEVICE-TWEAKER-V2 и POWER-PLAN"
@@ -295,13 +308,19 @@ fn main() -> std::process::ExitCode {
     }
 }
 fn run(mut args: Args) -> Result<u8> {
-    if [args.demo, args.snapshot, args.check, args.list]
-        .into_iter()
-        .filter(|x| *x)
-        .count()
+    if [
+        args.demo,
+        args.snapshot,
+        args.check,
+        args.list,
+        args.diagnose,
+    ]
+    .into_iter()
+    .filter(|x| *x)
+    .count()
         > 1
     {
-        bail!("Используй один режим: --demo, --snapshot, --check или --list.");
+        bail!("Используй один режим: --demo, --snapshot, --check, --list или --diagnose.");
     }
     if args.snapshot {
         print!("{}", ui::snapshot(args.width, args.height)?);
@@ -312,6 +331,18 @@ fn run(mut args: Args) -> Result<u8> {
         return Ok(0);
     }
     let root = host::resolve_root(args.root.as_deref())?;
+    if args.diagnose {
+        host::require_windows()?;
+        let report = diagnostics::collect(&root, &mut power::WindowsPower);
+        let output = serde_json::to_string_pretty(&report)?;
+        if let Some(path) = &args.diagnose_output {
+            diagnostics::save_new(path, &output)?;
+            println!("Диагностический отчёт сохранён: {}", path.display());
+        } else {
+            println!("{output}");
+        }
+        return Ok(0);
+    }
     if args.check {
         println!("{}", overview(&root));
         if !cfg!(all(windows, target_pointer_width = "64")) {
