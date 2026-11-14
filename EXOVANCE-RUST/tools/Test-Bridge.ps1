@@ -145,9 +145,8 @@ if($LASTEXITCODE -ne 0){throw 'Unable to build the current backend for verificat
 $metadata=(& cargo metadata --locked --no-deps --format-version 1 --manifest-path $manifest | ConvertFrom-Json)
 if($LASTEXITCODE -ne 0){throw 'Unable to resolve Cargo target directory'}
 $buildDir=Join-Path ([string]$metadata.target_directory) 'debug/build'
-$built=@(Get-ChildItem -LiteralPath $buildDir -Recurse -File -Filter 'backend.ps1' -ErrorAction Stop |
-    Where-Object { $_.FullName -match '[/\\]exovance-[^/\\]+[/\\]out[/\\]backend\.ps1$' })
-if($built.Count -ne 1){throw ('Expected one generated debug backend.ps1, found '+$built.Count+' in '+$buildDir)}
+$built=@(Get-ChildItem -LiteralPath $buildDir -Recurse -File -Filter 'backend.ps1' -ErrorAction Stop)
+if($built.Count -ne 1){throw ('Expected exactly one freshly built backend.ps1, found '+$built.Count+' in '+$buildDir+'; paths: '+(($built | ForEach-Object FullName) -join ', '))}
 foreach($file in $built) {
     $t=$null;$e=$null
     $text=[IO.File]::ReadAllText($file.FullName).Replace("`r`n","`n")
