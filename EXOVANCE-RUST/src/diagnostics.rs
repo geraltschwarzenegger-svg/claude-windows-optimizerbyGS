@@ -168,10 +168,8 @@ mod tests {
 
     #[test]
     fn output_is_new_only_and_requires_json_extension() {
-        let root = std::env::temp_dir().join(format!(
-            "exovance-diagnostics-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("exovance-diagnostics-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
         let path = root.join("report.json");
         save_new(&path, "{}").unwrap();
